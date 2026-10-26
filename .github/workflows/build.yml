@@ -18,11 +18,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install platform + build-tools
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      # GitHub's Ubuntu runners already ship an Android SDK; just add the
+      # platform + build-tools this project needs.
+      - name: Install Android platform + build-tools
+        run: |
+          SDKM=$(command -v sdkmanager || echo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager")
+          yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+          "$SDKM" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Build signed APK
         run: |
