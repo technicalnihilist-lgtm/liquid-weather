@@ -1,0 +1,13 @@
+# build output
+android/build/
+*.class
+*.jar
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.iml
+.vscode/
