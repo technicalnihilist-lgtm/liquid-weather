@@ -123,7 +123,7 @@ Everything needed to use, study, change and redistribute this app is in this rep
 - **License:** [MIT](LICENSE) — use it, fork it, ship it, sell it; just keep the copyright notice.
 - **Source of truth for the UI:** [`web/index.html`](web/index.html). The Android app is the same file inside a WebView.
 - **The design's origin:** [`design/Liquid_Weather.html`](design/Liquid_Weather.html) is the original static mockup this app grew out of, kept unmodified so the design intent stays visible.
-- **Reproducible build:** `android/build.sh` (and the CI workflow) turn the committed sources into the committed APK.
+- **Buildable from source:** `android/build.sh` (and the CI workflow) turn the committed sources into the shipped APK — no hidden steps, no prebuilt blobs. Builds aren't bit-identical because zip entries carry timestamps, but the code inside is exactly this tree.
 - **Contributing:** see [CONTRIBUTING.md](CONTRIBUTING.md). The one hard rule is that the app stays ad-free, account-free and tracker-free.
 - **Changes:** see [CHANGELOG.md](CHANGELOG.md).
 - **Hosted web version:** served from `web/` by GitHub Pages — https://technicalnihilist-lgtm.github.io/liquid-weather/
