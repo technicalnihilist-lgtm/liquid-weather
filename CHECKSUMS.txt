@@ -1,0 +1,22 @@
+SHA-256 checksums for the shipped Android build
+================================================
+
+Verify a download before installing:
+
+  Linux/macOS :  sha256sum LiquidWeather.apk        (or: shasum -a 256)
+  Windows     :  certutil -hashfile LiquidWeather.apk SHA256
+
+Compare the output with the line below. The same digest is shown on the
+release page and by the GitHub API for the release asset.
+
+77a4367f4d53a7a9f3effcc4a567f8d7e1d6aa3c578ea4218c64e74057d30866  LiquidWeather.apk
+
+You can also confirm the APK is signed by this project's key:
+
+  apksigner verify --print-certs LiquidWeather.apk
+  # expected SHA-256 of the signer certificate:
+  # 2035d69f949e12e56728cc83964fb7fa663c40fa45765cb3b880dc08229e3b8b
+  # CN=Liquid Weather, OU=Mobile, O=Liquid Weather, L=Pune, ST=Maharashtra, C=IN
+
+The signing key is included in the repo (android/release.keystore) so builds are
+reproducible; see the note in the README about what that means.

@@ -1,0 +1,159 @@
+<!--
+  Liquid Weather — original design mockup
+  SPDX-License-Identifier: MIT
+
+  This is the reference design the app was built from: a static, hand-written
+  screen with hard-coded sample cities and no live data. It is kept here
+  unmodified apart from this notice so the design can be compared with the
+  working app, and so anyone can see where the layout, gradients, glass cards,
+  cloud/particle scenes and pill navigation came from.
+
+  The working app (live forecasts, geolocation, worldwide search) lives in
+  ../web/index.html and is bundled into the Android APK from
+  ../android/assets/index.html.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Liquid Weather</title>
+<style>
+:root{--tx:#fff;--tx2:rgba(255,255,255,.72);--glass:rgba(255,255,255,.14);--edge:rgba(255,255,255,.55);--edge2:rgba(255,255,255,.08);--sh:rgba(0,0,0,.22);--cc:#fff;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--glass:rgba(255,255,255,.12)}}
+:root[data-theme="dark"]{--glass:rgba(255,255,255,.12)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;background:#0a0b14;color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter","Segoe UI",system-ui,sans-serif}
+body{display:flex;justify-content:center;align-items:center;overflow:hidden}
+.phone{position:relative;width:100%;max-width:430px;height:100%;max-height:900px;overflow:hidden;background:#000}
+@media(min-width:500px){.phone{height:min(880px,96%);border-radius:48px;box-shadow:0 0 0 10px #15161d,0 30px 80px rgba(0,0,0,.6)}}
+.bg{position:absolute;inset:0;opacity:0;transition:opacity 1.2s ease}.bg.on{opacity:1}
+.layer{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.orb{position:absolute;border-radius:50%;opacity:0;transition:opacity 1.2s}
+#sun{width:220px;height:220px;top:-40px;right:-30px;background:radial-gradient(circle,#fff8c9 0 22%,rgba(255,226,110,.75) 38%,rgba(255,200,60,0) 70%);animation:pulse 6s ease-in-out infinite alternate}
+#moon{width:84px;height:84px;top:70px;right:46px;background:#f4f1de;box-shadow:inset -18px -6px 0 0 #cfcab0,0 0 60px 14px rgba(230,230,255,.4)}
+@keyframes pulse{to{transform:scale(1.12)}}
+#clouds{transition:opacity 1.2s}
+.cloud{position:absolute;height:60px;border-radius:50%;background:var(--cc);filter:blur(16px);animation:drift linear infinite;transition:background 1.2s}
+.cloud::before,.cloud::after{content:"";position:absolute;border-radius:50%;background:inherit}
+.cloud::before{width:50%;height:120%;left:14%;top:-60%}.cloud::after{width:40%;height:100%;right:12%;top:-40%}
+@keyframes drift{from{transform:translateX(-300px)}to{transform:translateX(560px)}}
+#fx{position:absolute;inset:0;width:100%;height:100%}
+#flash{position:absolute;inset:0;background:#dfe6ff;opacity:0;pointer-events:none}
+@media(prefers-reduced-motion:reduce){.cloud,#sun{animation:none}}
+.glass{background:var(--glass);backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%);border:1px solid var(--edge2);box-shadow:inset 1.5px 1.5px 1px var(--edge),inset -1px -1px 1px var(--edge2),0 10px 30px var(--sh)}
+main{position:absolute;inset:0;overflow-y:auto;padding:22px 16px 118px;scrollbar-width:none}
+main::-webkit-scrollbar{display:none}
+.bar{display:flex;justify-content:space-between;align-items:center}
+.u{height:34px;padding:0 14px;border-radius:17px;border:0;color:var(--tx);font:inherit;font-weight:800;font-size:14px;cursor:pointer}
+.loc{font-size:15px;font-weight:700;opacity:.9}
+.hero{text-align:center;padding:26px 0 24px}
+.hero h1{margin:0;font-size:34px;font-weight:600;letter-spacing:-.01em}
+.temp{font-size:112px;font-weight:200;line-height:1;letter-spacing:-.04em;margin:2px 0 0 14px;text-shadow:0 6px 30px rgba(0,0,0,.18)}
+.cond{font-size:21px;font-weight:600}.hl{font-size:18px;font-weight:500;opacity:.85;margin-top:4px}
+.card{border-radius:26px;padding:14px 16px;margin-bottom:12px}
+.lbl{font-size:13px;font-weight:700;color:var(--tx2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--edge2)}
+.sum{font-size:15px;line-height:1.4}
+.hrs{display:flex;gap:6px;overflow-x:auto;margin:0 -6px;scrollbar-width:none}.hrs::-webkit-scrollbar{display:none}
+.hr{flex:none;width:56px;text-align:center;padding:6px 0}.hr span{display:block;font-size:13px;font-weight:600}.hr i{font-style:normal;font-size:26px;display:block;margin:8px 0}.hr b{font-size:17px}
+.day{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--edge2)}.day:first-of-type{border:0}
+.day em{width:52px;font-style:normal;font-weight:600;font-size:16px}.day i{font-style:normal;width:30px;font-size:22px;text-align:center}
+.day small{width:34px;text-align:right;font-size:16px;font-weight:600}.day small.lo{color:var(--tx2)}
+.rng{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.2);position:relative}.rng s{position:absolute;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,#7fd6ff,#ffd86b,#ff9a5a)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid .card{margin:0;min-height:128px}
+.grid b{display:block;font-size:34px;font-weight:500;margin:4px 0 8px}.grid span{font-size:13px;color:var(--tx2);line-height:1.35;display:block}
+nav{position:absolute;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:10;height:68px;border-radius:34px;display:flex;padding:6px;gap:2px}
+nav button{flex:1;border:0;background:none;border-radius:28px;color:var(--tx2);font:inherit;font-size:10px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;transition:background .3s,color .3s}
+nav button i{font-style:normal;font-size:21px}
+nav button.on{color:#fff;background:rgba(255,255,255,.22);box-shadow:inset 1.5px 1.5px 1px var(--edge),0 4px 14px var(--sh)}
+.fade{transition:opacity .35s}.fade.out{opacity:0}
+:focus-visible{outline:2px solid #fff;outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div id="bgs"></div>
+  <div class="layer"><div class="orb" id="sun"></div><div class="orb" id="moon"></div><div id="clouds"></div></div>
+  <canvas id="fx"></canvas>
+  <div class="layer" id="flash"></div>
+  <main id="main"></main>
+  <nav class="glass" id="nav"></nav>
+</div>
+<script>
+const S={
+sun:{name:'Sunny',bg:['#1e6fe0','#4fb4f5','#a8e2ff'],cc:'#fff',co:.35,n:3,orb:'sun',ic:['☀️','☀️','🌤️','☀️','⛅','☀️','🌤️','☀️'],
+ sum:'Clear skies and plenty of sunshine all day. Great time to be outside.'},
+cloud:{name:'Cloudy',bg:['#56677d','#8393a8','#b4c0cf'],cc:'#e8edf3',co:.95,n:7,ic:['☁️','☁️','⛅','☁️','🌥️','☁️','⛅','☁️'],
+ sum:'Overcast skies with a few bright breaks later this afternoon.'},
+rain:{name:'Rain',bg:['#243545','#3a566e','#5a7389'],cc:'#8a98a8',co:.95,n:7,fx:'rain',ic:['🌦️','🌧️','🌧️','🌧️','🌦️','🌧️','🌧️','🌦️'],
+ sum:'Steady rain through the evening. Pack an umbrella before you head out.'},
+storm:{name:'Thunderstorm',bg:['#14142a','#2a2748','#473a63'],cc:'#4b4d68',co:.95,n:8,fx:'storm',ic:['⛈️','⛈️','🌧️','⛈️','⛈️','🌧️','⛈️','🌦️'],
+ sum:'Thunderstorms with strong gusts. Stay indoors and away from open areas.'},
+snow:{name:'Snow',bg:['#5f7fa6','#a0b9d8','#dce8f5'],cc:'#f2f6fb',co:.8,n:5,fx:'snow',ic:['🌨️','❄️','❄️','🌨️','❄️','🌨️','❄️','⛅'],
+ sum:'Light snow continues. Roads may be slippery, so allow extra travel time.'},
+night:{name:'Clear Night',bg:['#050820','#121a4a','#2b2f77'],cc:'#6a70b0',co:.12,n:2,orb:'moon',fx:'stars',ic:['🌙','🌙','🌙','✨','🌙','🌙','🌙','🌙'],
+ sum:'Clear and calm tonight with a bright moon and excellent stargazing.'}};
+const C=[
+{c:'Cupertino',s:'sun',t:27,h:31,l:17,hr:12,e:'☀️',d:{uv:'8',w:14,hu:34,v:16,p:1016,f:29}},
+{c:'London',s:'cloud',t:14,h:16,l:9,hr:14,e:'☁️',d:{uv:'2',w:18,hu:72,v:9,p:1008,f:12}},
+{c:'Seattle',s:'rain',t:11,h:13,l:8,hr:17,e:'🌧️',d:{uv:'1',w:22,hu:88,v:6,p:1003,f:9}},
+{c:'Miami',s:'storm',t:25,h:28,l:23,hr:16,e:'⛈️',d:{uv:'3',w:41,hu:91,v:4,p:998,f:28}},
+{c:'Oslo',s:'snow',t:-4,h:-1,l:-9,hr:9,e:'❄️',d:{uv:'0',w:12,hu:79,v:5,p:1021,f:-9}},
+{c:'Tokyo',s:'night',t:19,h:24,l:16,hr:22,e:'🌙',d:{uv:'0',w:7,hu:55,v:20,p:1014,f:19}}];
+const $=s=>document.querySelector(s);
+let cur=0,F=false;
+const T=c=>Math.round(F?c*9/5+32:c);
+const hl=h=>{h=h%24;const a=h>=12?'PM':'AM';return (h%12||12)+' '+a};
+// backgrounds
+$('#bgs').innerHTML=Object.keys(S).map(k=>`<div class="bg" id="bg-${k}" style="background:linear-gradient(180deg,${S[k].bg.join(',')})"></div>`).join('');
+// clouds
+const cl=$('#clouds');
+for(let i=0;i<9;i++){const d=document.createElement('div');d.className='cloud';d.style.cssText=`width:${150+Math.random()*130}px;top:${20+i*52+Math.random()*30}px;animation-duration:${50+Math.random()*60}s;animation-delay:-${Math.random()*80}s`;d.dataset.i=i;cl.appendChild(d)}
+// particles
+const cv=$('#fx'),cx=cv.getContext('2d');let P=[],mode='',W=0,H=0;
+function size(){const r=cv.getBoundingClientRect();W=cv.width=r.width;H=cv.height=r.height;seed()}
+function seed(){const n=mode==='storm'?260:mode==='rain'?170:mode==='snow'?110:mode==='stars'?90:0;
+ P=Array.from({length:n},()=>({x:Math.random()*W,y:Math.random()*H,v:Math.random(),r:Math.random()*2+.6}))}
+const still=matchMedia('(prefers-reduced-motion:reduce)').matches;
+function tick(){cx.clearRect(0,0,W,H);
+ if(!still)for(const p of P){
+  if(mode==='rain'||mode==='storm'){const sp=(mode==='storm'?22:15)+p.v*8;cx.strokeStyle='rgba(200,220,255,.5)';cx.lineWidth=1.2;cx.beginPath();cx.moveTo(p.x,p.y);cx.lineTo(p.x-3,p.y+14+p.v*8);cx.stroke();p.y+=sp;p.x-=1.5;if(p.y>H){p.y=-20;p.x=Math.random()*W}}
+  else if(mode==='snow'){cx.fillStyle='rgba(255,255,255,.9)';cx.beginPath();cx.arc(p.x,p.y,p.r+1,0,7);cx.fill();p.y+=.8+p.v*1.6;p.x+=Math.sin(p.y/30+p.v*6)*.6;if(p.y>H){p.y=-6;p.x=Math.random()*W}}
+  else if(mode==='stars'){p.v+=.02;cx.fillStyle=`rgba(255,255,255,${.35+Math.abs(Math.sin(p.v+p.x))*.65})`;cx.fillRect(p.x,p.y*.6,p.r,p.r)}}
+ requestAnimationFrame(tick)}
+let lt;function lightning(){clearTimeout(lt);if(mode!=='storm')return;
+ lt=setTimeout(()=>{const f=$('#flash');f.animate([{opacity:0},{opacity:.7},{opacity:.1},{opacity:.55},{opacity:0}],{duration:600});lightning()},2500+Math.random()*5000)}
+// scene
+function scene(k){const s=S[k];mode=s.fx||'';
+ document.querySelectorAll('.bg').forEach(b=>b.classList.toggle('on',b.id==='bg-'+k));
+ document.documentElement.style.setProperty('--cc',s.cc);
+ $('#clouds').style.opacity=s.co;
+ document.querySelectorAll('.cloud').forEach(c=>c.style.display=+c.dataset.i<s.n?'block':'none');
+ $('#sun').style.opacity=s.orb==='sun'?1:0;$('#moon').style.opacity=s.orb==='moon'?1:0;
+ seed();lightning()}
+// UI
+function view(){const c=C[cur],s=S[c.s];
+ const hours=Array.from({length:8},(_,i)=>{const o=[0,1,2,2,1,0,-1,-2][i];return `<div class="hr"><span>${i?hl(c.hr+i):'Now'}</span><i>${s.ic[i]}</i><b>${T(c.t+o)}°</b></div>`}).join('');
+ const dn=['Today','Wed','Thu','Fri','Sat','Sun','Mon'],o=[0,1,-1,2,0,-2,1],mn=Math.min(...o.map(x=>c.l+x)),mx=Math.max(...o.map(x=>c.h+x));
+ const days=dn.map((n,i)=>{const lo=c.l+o[i],hi=c.h+o[i],a=(lo-mn)/(mx-mn+1)*100,b=(hi-mn+1)/(mx-mn+1)*100;return `<div class="day"><em>${n}</em><i>${s.ic[i]}</i><small class="lo">${T(lo)}°</small><div class="rng"><s style="left:${a}%;right:${100-b}%"></s></div><small>${T(hi)}°</small></div>`}).join('');
+ const d=c.d,uvT=+d.uv>=8?'Very high':+d.uv>=3?'Moderate':'Low';
+ $('#main').innerHTML=`<div class="fade" id="fd">
+ <div class="bar"><span class="loc">📍 My Location</span><button class="u glass" id="unit">°${F?'F':'C'}</button></div>
+ <div class="hero"><h1>${c.c}</h1><div class="temp">${T(c.t)}°</div><div class="cond">${s.name}</div><div class="hl">H:${T(c.h)}°  L:${T(c.l)}°</div></div>
+ <div class="card glass"><div class="sum">${s.sum}</div></div>
+ <div class="card glass"><div class="lbl">🕐 Hourly forecast</div><div class="hrs">${hours}</div></div>
+ <div class="card glass"><div class="lbl">📅 7-day forecast</div>${days}</div>
+ <div class="grid">
+ <div class="card glass"><div class="lbl">☀️ UV index</div><b>${d.uv}</b><span>${uvT}</span></div>
+ <div class="card glass"><div class="lbl">💨 Wind</div><b>${F?Math.round(d.w*.62):d.w}</b><span>${F?'mph':'km/h'} gusts</span></div>
+ <div class="card glass"><div class="lbl">💧 Humidity</div><b>${d.hu}%</b><span>Dew point ${T(c.t-Math.round((100-d.hu)/5))}°</span></div>
+ <div class="card glass"><div class="lbl">🌡️ Feels like</div><b>${T(d.f)}°</b><span>${d.f<c.t?'Wind makes it feel cooler.':'Close to the actual temperature.'}</span></div>
+ <div class="card glass"><div class="lbl">👁️ Visibility</div><b>${F?Math.round(d.v*.62):d.v}</b><span>${F?'mi':'km'} view range</span></div>
+ <div class="card glass"><div class="lbl">⏲️ Pressure</div><b>${d.p}</b><span>hPa</span></div></div></div>`;
+ $('#unit').onclick=()=>{F=!F;view()};}
+function nav(){$('#nav').innerHTML=C.map((c,i)=>`<button data-i="${i}" class="${i===cur?'on':''}"><i>${c.e}</i>${c.c.slice(0,8)}</button>`).join('')}
+$('#nav').onclick=e=>{const b=e.target.closest('button');if(!b)return;cur=+b.dataset.i;nav();scene(C[cur].s);view();$('#main').scrollTop=0};
+nav();view();scene(C[0].s);size();addEventListener('resize',size);tick();
+</script>
+</body>
+</html>
