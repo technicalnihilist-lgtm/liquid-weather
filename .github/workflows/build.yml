@@ -9,6 +9,10 @@ on:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    # Needed so the tag build can attach the APK to the release; the default
+    # GITHUB_TOKEN is read-only on this repo.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
