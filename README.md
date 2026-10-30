@@ -4,12 +4,16 @@ A glassy, animated weather app — the exact same design as the original `Liquid
 
 **No ads. No account. No sign-up. No tracking.** Just open it, allow location (or pick a city), and read the weather.
 
-**Try it right now in your browser:** https://technicalnihilist-lgtm.github.io/liquid-weather/
+**Try it right now in your browser:** https://technicalnihilist-lgtm.github.io/liquid-weather/  
+**Latest APK:** [v1.1](https://github.com/technicalnihilist-lgtm/liquid-weather/releases/latest)
 
 <p align="center">
   <img src="screenshots/home.png" width="250" alt="Clear night in New Delhi">
   <img src="screenshots/rain.png" width="250" alt="Rainy afternoon">
   <img src="screenshots/search.png" width="250" alt="Search any city or country">
+</p>
+<p align="center">
+  <img src="screenshots/settings.png" width="250" alt="Glass & motion settings">
 </p>
 
 ---
@@ -39,9 +43,11 @@ sha256sum LiquidWeather.apk
 - **Up to 5 saved places** in the bottom nav, switch between them instantly.
 - **Real metrics** — UV index, wind + gusts, humidity with dew point, feels-like, visibility, pressure.
 - **°C / °F** toggle, remembered between launches.
+- **Glass & motion settings** — tune transparency, blur and bounce to taste, with a reset. Your choices persist.
+- **Draggable pill navigation** with Weather / Cities / Glass tabs.
 - **The design is intact** — same glass cards, drifting blurred clouds, sun/moon orbs, rain/snow particles, lightning flashes and pill navigation. Conditions now drive the scene, and night gets its own darker palette per condition.
 
-Auto-refreshes every 10 minutes and whenever you come back to the app. Tap the city name to change place or force a refresh.
+Auto-refreshes every 10 minutes and whenever you come back to the app. Tap the city name (or the Cities tab) to change place.
 
 ---
 
