@@ -9,10 +9,6 @@ on:
 jobs:
   apk:
     runs-on: ubuntu-latest
-    # Needed so the tag build can attach the APK to the release; the default
-    # GITHUB_TOKEN is read-only on this repo.
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -35,14 +31,12 @@ jobs:
           chmod +x android/build.sh
           ./android/build.sh
 
+      # CI builds the APK to prove the committed sources build. The published
+      # release asset is the maintainer's build of the same source, so its
+      # SHA-256 matches CHECKSUMS.txt (byte-for-byte identical builds aren't
+      # possible here: apksigner stamps zip entries with the current time).
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: LiquidWeather-apk
           path: android/build/LiquidWeather.apk
-
-      - name: Attach APK to release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: android/build/LiquidWeather.apk
