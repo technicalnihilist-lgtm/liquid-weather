@@ -24,6 +24,28 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - The night-time summary no longer suggests going outside for the day — clear
   nights now read "Light winds and no rain expected overnight."
 
+## [1.2] — 2026-10-31
+
+### Added
+- **4D depth & parallax across the whole app.** The sky gradient, sun/moon and
+  clouds, particles, glass cards and the pill nav now sit at different depths
+  and move at different rates. Motion follows the device tilt (gyroscope), your
+  finger/mouse position, and scrolling.
+- **Two new settings** in *Glass & motion*: **Depth** (how far apart the layers
+  sit) and **Parallax** (how much they follow you). Both persist, and *Reset to
+  default* restores them.
+
+### Changed
+- Version bumped to 1.2 (`versionCode 3`), same signing key, installs over 1.1.
+- Settings sliders now show their saved positions the moment the app opens,
+  instead of only after the panel is opened once.
+
+### Notes
+- With *Reduce motion* enabled in Android accessibility settings the depth
+  effect switches itself off, and both sliders default to 0.
+- Tilt parallax needs a device with a gyroscope; on anything without one the
+  finger and scroll parallax still work.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
@@ -59,6 +81,7 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.1...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.2...HEAD
+[1.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.2
 [1.1]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.1
 [1.0]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.0

@@ -5,7 +5,7 @@ A glassy, animated weather app — the exact same design as the original `Liquid
 **No ads. No account. No sign-up. No tracking.** Just open it, allow location (or pick a city), and read the weather.
 
 **Try it right now in your browser:** https://technicalnihilist-lgtm.github.io/liquid-weather/  
-**Latest APK:** [v1.1](https://github.com/technicalnihilist-lgtm/liquid-weather/releases/latest)
+**Latest APK:** [v1.2](https://github.com/technicalnihilist-lgtm/liquid-weather/releases/latest)
 
 <p align="center">
   <img src="screenshots/home.png" width="250" alt="Clear night in New Delhi">
@@ -45,6 +45,7 @@ sha256sum LiquidWeather.apk
 - **°C / °F** toggle, remembered between launches.
 - **Glass & motion settings** — tune transparency, blur and bounce to taste, with a reset. Your choices persist.
 - **Draggable pill navigation** with Weather / Cities / Glass tabs.
+- **4D depth & parallax** — sky, clouds, particles, cards and nav sit at different depths and follow your tilt, finger and scrolling. Tune it with the **Depth** and **Parallax** sliders.
 - **The design is intact** — same glass cards, drifting blurred clouds, sun/moon orbs, rain/snow particles, lightning flashes and pill navigation. Conditions now drive the scene, and night gets its own darker palette per condition.
 
 Auto-refreshes every 10 minutes and whenever you come back to the app. Tap the city name (or the Cities tab) to change place.
