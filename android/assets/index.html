@@ -334,6 +334,14 @@ let cur = isFinite(curRaw) ? Math.floor(curRaw) : 0;
 cur = Math.max(0, Math.min(cur, places.length - 1));   // negative / huge / NaN indexes used to blank the app
 const cache = {};          // id -> weather payload
 let lastKey = '', dirNext = 1, showSeq = 0, fcCtl = null;
+/* Elapsed time is measured on the monotonic clock, never on Date.now(). A
+   device whose wall clock is corrected backwards — NTP catching up after a
+   boot on a flat battery, or the user changing the clock — made a cached
+   forecast look fresh for as long as the skew lasted, and stopped the ten-minute
+   refresh from firing, so the app sat on one forecast until the clock caught up.
+   performance.now() cannot run backwards. The forecast cache lives in memory
+   for this session only, so every timestamp taken here is comparable. */
+const mono = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
 
 const savePlaces = () => { LS.set('lw_places', places); LS.set('lw_cur', cur); };
 
@@ -599,10 +607,10 @@ async function show(force) {
   const key = p.id || (p.lat + ',' + p.lon);
   try {
     let w = cache[key];
-    if (!w || force || Date.now() - w.at > 10 * 60 * 1000) {
+    if (!w || force || mono() - w.at > 10 * 60 * 1000) {
       if (!w && lastKey) $('#main').classList.add('loading');
       w = await loadWeather(p, ctl.signal);
-      w.at = Date.now();
+      w.at = mono();
       cache[key] = w;
     }
     if (my !== showSeq) return;
@@ -1377,11 +1385,11 @@ tick();
 })();
 
 /* refresh when the tab comes back, and every 10 minutes */
-let lastAuto = Date.now();
+let lastAuto = mono();
 function autoRefresh() {
   if (document.visibilityState !== 'visible') return;
-  if (Date.now() - lastAuto < 10 * 60 * 1000) return;
-  lastAuto = Date.now();
+  if (mono() - lastAuto < 10 * 60 * 1000) return;
+  lastAuto = mono();
   const p = places[cur];
   if (p && p.lat) show(true);
 }
