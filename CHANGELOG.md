@@ -106,6 +106,43 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   Chromium against the previous file, with default and non-default settings).
 - `versionCode 5` / `versionName 1.2.2`, same signing key, installs over 1.2.1.
 
+## [1.2.3] — 2026-11-01
+
+### Fixed
+- **Keyboard focus was thrown away by every re-render.** `render()` replaces the
+  whole of `#main`, which destroys the control that had focus and drops focus to
+  `<body>`. Toggling °C/°F with the keyboard, or picking a city, left keyboard and
+  screen-reader users at the top of the document with no way back except tabbing
+  through everything again. The id of the focused control is now remembered for a
+  few seconds — a short window, so a later background refresh cannot steal focus —
+  and put back on the new copy of the same control.
+- **Deleting a saved city was pointer-only, and the ✕ in search results did
+  nothing.** The remove control was a `role="button"` span with no `tabindex`, so
+  it could not be focused or pressed from the keyboard, and it announced itself as
+  "Remove" with no indication of what would be removed. In the Popular/Results
+  rows it carried `data-rm="-1"`, which no handler ever read: it was announced as
+  a Remove button and performed no removal at all. Both are now real controls:
+  focusable, named after the city ("Remove Mumbai"), activated by Enter/Space, and
+  wired to the same removal path as the Saved-places list.
+- **Removing a city while a search was typed threw an error and left the stale
+  row on screen.** The repaint after a removal was called without a results list,
+  so `results.length` raised a `TypeError` — before the forecast refresh and the
+  repaint ran. The sheet now reuses the results it last painted.
+- **Tab walked into the page hidden behind the search sheet.** The sheet covers
+  the whole screen but only hid itself from assistive technology, so tabbing past
+  the last result went through the city bar, the unit button and the forecast
+  behind it. `#main` is now `inert` while the sheet is open. The pill nav stays
+  live: it floats above the sheet and is how you leave it.
+- **Focus was dropped to `<body>` after a removal in the search sheet.** It now
+  moves to the next ✕ in the repainted list (or the location button), instead of
+  falling out of the panel.
+
+### Notes
+- No visual change: the rendered DOM and the computed styles of every element are
+  identical to 1.2.2 in all four states checked (loaded, search sheet open,
+  settings open, offline) — same node count, same structure, same styles.
+- `versionCode 6` / `versionName 1.2.3`, same signing key, installs over 1.2.2.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
