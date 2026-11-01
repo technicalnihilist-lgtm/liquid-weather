@@ -433,6 +433,30 @@ function toast(msg, ms) {
   tt = setTimeout(() => el.classList.remove('on'), ms || 3200);
 }
 
+/* ---------- focus across a re-render ----------
+   render()/renderSkeleton()/renderError() replace the whole of #main, which
+   destroys whatever had focus and drops it to <body>: toggling °C/°F or
+   picking a city left keyboard and screen-reader users back at the top of the
+   document. The id of the control that had focus is remembered for a few
+   seconds (a short window, so a later background refresh can't steal focus)
+   and put back on the new copy of the same control. */
+let heldFocus = { id: '', until: 0 };
+function holdFocusIn(sel) {
+  const a = document.activeElement;
+  if (!a || a === document.body || !a.id) return;
+  const host = document.querySelector(sel);
+  if (host && host.contains(a)) heldFocus = { id: a.id, until: Date.now() + 4000 };
+}
+function holdFocusOn(id) { if (id) heldFocus = { id, until: Date.now() + 4000 }; }
+function applyHeldFocus() {
+  const h = heldFocus; heldFocus = { id: '', until: 0 };
+  if (!h.id || Date.now() > h.until) return;
+  const a = document.activeElement;
+  if (a && a !== document.body) return;            // focus is already somewhere real
+  const el = document.getElementById(h.id);
+  if (el && !el.closest('[inert]')) { try { el.focus({ preventScroll: true }); } catch (e) {} }
+}
+
 /* ---------- network ---------- */
 async function getJSON(url, timeout) {
   const ctl = new AbortController();
@@ -585,6 +609,7 @@ function summarise(w, cond, code) {
 function renderSkeleton(p) {
   lastKey = ''; $('#main').classList.remove('loading');
   scene('cloud', true);
+  holdFocusIn('#main');
   $('#main').innerHTML = `<div class="page">
     <div class="bar"><button class="loc" id="openSearch"><span>📍 ${esc(p.name)}</span></button><span class="ub"><button class="u glass" id="unit">°${F ? 'F' : 'C'}</button></span></div>
     <div class="hero"><h1>${esc(p.name)}</h1><div class="temp">--°</div><div class="cond"><span class="spin"></span>${p.lat ? 'Loading forecast…' : 'Locating…'}</div><div class="hl">&nbsp;</div></div>
@@ -594,11 +619,13 @@ function renderSkeleton(p) {
   </div>`;
   bindUnit();
   $('#main .page').classList.add('enter'); prepEnter();
+  applyHeldFocus();
 }
 
 function renderError(p) {
   lastKey = ''; $('#main').classList.remove('loading');
   if (!document.querySelector('.bg.on')) scene('cloud', true);   // never leave the app on a black screen
+  holdFocusIn('#main');
   $('#main').innerHTML = `<div class="page">
     <div class="bar"><button class="loc" id="openSearch"><span>📍 ${esc(p.name)}</span></button><span class="ub"><button class="u glass" id="unit">°${F ? 'F' : 'C'}</button></span></div>
     <div class="hero"><h1>${esc(p.name)}</h1><div class="temp">--°</div><div class="cond">Offline</div><div class="hl">Could not load the forecast</div></div>
@@ -614,6 +641,7 @@ function renderError(p) {
   retry.onkeydown = e => {
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); show(true); }
   };
+  applyHeldFocus();
 }
 
 const esc = s => String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
@@ -662,6 +690,7 @@ function render(p, w) {
   const rkey = p.id || (p.lat + ',' + p.lon);
   const anim = rkey !== lastKey;               // only bounce in when the city actually changed
   lastKey = rkey;
+  holdFocusIn('#main');
   $('#main').classList.remove('loading');
   $('#main').innerHTML = `<div class="page${anim ? ' enter' : ''}">
   <div class="bar"><button class="loc" id="openSearch" title="Change city"><span>📍 ${esc(p.name)}${p.sub ? ', ' + esc(p.sub) : ''}</span></button><span class="ub"><button class="u glass" id="unit">°${F ? 'F' : 'C'}</button></span></div>
@@ -681,6 +710,7 @@ function render(p, w) {
   bindUnit();
   $('#openSearch').onclick = openSheet;
   if (anim) prepEnter();
+  applyHeldFocus();
 }
 function prepEnter() {
   const pg = $('#main .page');
@@ -832,6 +862,12 @@ function openSheet() {
   sheet.classList.add('open');
   sheet.removeAttribute('inert');
   sheet.setAttribute('aria-hidden', 'false');
+  /* the sheet covers the page, so take what it hides out of the tab order: Tab
+     used to walk from the last result into the invisible city bar, unit button
+     and forecast behind it. The nav stays live — it sits above the sheet and is
+     how you leave it. */
+  const mEl = $('#main');
+  if (mEl) mEl.setAttribute('inert', '');
   qEl.value = '';
   paintSheet('');
   listEl.classList.add('stagger');
@@ -845,10 +881,17 @@ function closeSheet() {
   sheet.classList.remove('open');
   sheet.setAttribute('aria-hidden', 'true');
   sheet.setAttribute('inert', '');
+  const mEl = $('#main');
+  if (mEl) mEl.removeAttribute('inert');        // before focusing, or the focus call is ignored
   qEl.blur();
   if (hadFocus) {
     const back = $('#openSearch');
-    if (back) { try { back.focus({ preventScroll: true }); } catch (e) {} }
+    if (back) {
+      try { back.focus({ preventScroll: true }); } catch (e) {}
+      /* the newly picked city's forecast is still loading and will replace
+         this button, so ask the render to put focus back on it */
+      holdFocusOn(back.id);
+    }
   }
 }
 $('#closeSheet').onclick = closeSheet;
@@ -914,16 +957,27 @@ function localMatches(q) {
   }).slice(0, 8).map(c => ({ name: c[0], sub: c[1], lat: c[2], lon: c[3] }));
 }
 const pid = o => 'c' + o.lat.toFixed(3) + ',' + o.lon.toFixed(3);
-const alreadySaved = o => places.some(p => p.id === pid(o));
 
-function row(o, isSaved, idx) {
-  const right = isSaved ? `<span class="rm" data-rm="${idx}" role="button" aria-label="Remove">✕</span>` : '';
+function row(o) {
+  /* the ✕ is a real control: it names the place it removes, takes keyboard
+     focus, and carries the index of the saved row it belongs to. It used to
+     carry data-rm="-1" that nothing read, so it announced "Remove" and did
+     nothing at all. */
+  const idx = places.findIndex(p => p.id === pid(o));
+  const right = idx >= 0
+    ? `<span class="rm" data-rm="${idx}" role="button" tabindex="0" aria-label="Remove ${esc(o.name)}">✕</span>` : '';
+  const isSaved = idx >= 0;
   return `<button class="sh-i" data-lat="${o.lat}" data-lon="${o.lon}" data-name="${esc(o.name)}" data-sub="${esc(o.sub || '')}">
     <span class="ic">${isSaved ? '📍' : '🔎'}</span>
     <span style="min-width:0"><b>${esc(o.name)}</b><small>${esc(o.sub || '')}</small></span>${right}</button>`;
 }
 
+let lastResults = [];      // last painted results, reused when the sheet is repainted (after a removal)
 function paintSheet(q, results) {
+  /* removeSaved() repaints the sheet with the query still in the box; it used to
+     pass no results at all, so `results.length` threw and the list kept showing
+     the city that had just been deleted. */
+  if (results === undefined) results = lastResults; else lastResults = results;
   const saved = places.filter(p => p.lat);
   const here = places[cur];
   let html = `<div style="display:flex;gap:8px;margin-bottom:6px">
@@ -935,16 +989,16 @@ function paintSheet(q, results) {
       `<button class="sh-i" data-go="${places.indexOf(p)}">
         <span class="ic">🏙️</span>
         <span style="min-width:0"><b>${esc(p.name)}</b><small>${esc(p.sub || '')}</small></span>
-        <span class="rm" data-rm2="${places.indexOf(p)}" role="button" aria-label="Remove">✕</span></button>`).join('');
+        <span class="rm" data-rm2="${places.indexOf(p)}" role="button" tabindex="0" aria-label="Remove ${esc(p.name)}">✕</span></button>`).join('');
   }
   if (q.trim()) {
     html += `<div class="sh-h">Results</div>`;
     if (results === null) html += `<div class="sh-empty"><span class="spin"></span>Searching…</div>`;
     else if (!results.length) html += `<div class="sh-empty">No place called “${esc(q.trim())}”. Try a nearby city, or the country name.</div>`;
-    else html += results.map(o => row(o, alreadySaved(o), -1)).join('');
+    else html += results.map(o => row(o)).join('');
   } else {
     html += `<div class="sh-h">Popular</div>` + POPULAR.slice(0, 8).map(o =>
-      row({ name: o[0], sub: o[1], lat: o[2], lon: o[3] }, alreadySaved({ lat: o[2], lon: o[3] }), -1)).join('');
+      row({ name: o[0], sub: o[1], lat: o[2], lon: o[3] })).join('');
   }
   listEl.innerHTML = html;
 }
@@ -1037,19 +1091,37 @@ function addPlace(o) {
   show();
 }
 
+function removeSaved(i) {
+  const p = places[i];
+  if (!p) return;
+  if (p.myLoc) { toast('My Location stays pinned.'); return; }
+  const hadFocus = listEl.contains(document.activeElement);   // repainting the list would drop it to <body>
+  places.splice(i, 1);
+  if (!places.length) places = [{ id: 'loc', name: 'My Location', sub: '', lat: null, lon: null, myLoc: true }];
+  if (i < cur) cur--;                           // keep pointing at the same city after a removal
+  cur = Math.max(0, Math.min(cur, places.length - 1));
+  savePlaces(); nav(); paintSheet(qEl.value);
+  if (hadFocus) {                               // stay in the list; don't drop focus to <body>
+    const next = listEl.querySelector('.rm') || $('#shLoc');
+    if (next) { try { next.focus({ preventScroll: true }); } catch (e) {} }
+  }
+  if (!places[cur].lat) locate(); else show();
+}
+
+listEl.addEventListener('keydown', e => {
+  const rm = e.target.closest && e.target.closest('.rm');
+  if (!rm) return;
+  if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+    e.preventDefault(); e.stopPropagation();     // a span doesn't activate itself; the row button must not fire
+    rm.click();
+  }
+});
+
 listEl.onclick = e => {
-  const rm = e.target.closest('[data-rm2]');
+  const rm = e.target.closest('[data-rm2],[data-rm]');
   if (rm) {
     e.stopPropagation();
-    const i = +rm.dataset.rm2;
-    const p = places[i];
-    if (p.myLoc) { toast('My Location stays pinned.'); return; }
-    places.splice(i, 1);
-    if (!places.length) places = [{ id: 'loc', name: 'My Location', sub: '', lat: null, lon: null, myLoc: true }];
-    if (i < cur) cur--;                           // keep pointing at the same city after a removal
-    cur = Math.max(0, Math.min(cur, places.length - 1));
-    savePlaces(); nav(); paintSheet(qEl.value);
-    if (!places[cur].lat) locate(); else show();
+    removeSaved(rm.hasAttribute('data-rm2') ? +rm.dataset.rm2 : +rm.dataset.rm);
     return;
   }
   const go = e.target.closest('[data-go]');
