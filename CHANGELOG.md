@@ -46,6 +46,36 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Tilt parallax needs a device with a gyroscope; on anything without one the
   finger and scroll parallax still work.
 
+## [1.2.1] — 2026-11-01
+
+### Fixed
+- **Keyboard and screen-reader access to the closed panels.** The search sheet
+  and the *Glass & motion* panel were only hidden with `aria-hidden`, so their
+  search field, sliders and buttons stayed in the tab order while invisible:
+  tabbing walked through controls nobody could see, and the accessibility tree
+  hid focusable content. Both panels are now `inert` while closed, and the
+  search sheet is marked up as a dialog with a label.
+- **Focus is no longer dropped to `<body>`.** Closing the search sheet or the
+  settings panel now returns focus to the control that opened it (the city
+  button, or the *Glass* tab), and opening the settings panel moves focus to
+  its first slider instead of leaving it behind the panel.
+- **The offline "tap here to try again" card works without a pointer** — it is
+  a button role with Enter/Space handling, so the only route back online is no
+  longer mouse-only.
+- **Spoken names:** the °C/°F toggle announces "Temperature unit: Celsius /
+  Fahrenheit", the search field has a label instead of relying on its
+  placeholder, the refresh button has an accessible name, and the decorative
+  particle canvas is hidden from assistive technology.
+- **7-day range bar markup.** The bar was drawn with `<s>`, which means
+  "no longer accurate" and can be announced as struck-through text; it is now a
+  `<span>` with identical styling.
+
+### Notes
+- No visual change: layout, spacing, colours, gradients and animation timings
+  are untouched — verified by pixel-identical screenshots of the old and new
+  build.
+- `versionCode 4` / `versionName 1.2.1`, same signing key, installs over 1.2.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

@@ -49,7 +49,7 @@ main::-webkit-scrollbar{display:none}
 .day{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--edge2)}.lbl+.day{border-top:0}
 .day em{width:52px;font-style:normal;font-weight:600;font-size:16px}.day i{font-style:normal;width:30px;font-size:22px;text-align:center}
 .day small{width:34px;text-align:right;font-size:16px;font-weight:600}.day small.lo{color:var(--tx2)}
-.rng{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.2);position:relative}.rng s{position:absolute;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,#7fd6ff,#ffd86b,#ff9a5a)}
+.rng{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.2);position:relative}.rng span{position:absolute;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,#7fd6ff,#ffd86b,#ff9a5a)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid .card{margin:0;min-height:128px}
 .grid b{display:block;font-size:34px;font-weight:500;margin:4px 0 8px}.grid span{font-size:13px;color:var(--tx2);line-height:1.35;display:block}
 /* nav: see motion layer below */
@@ -199,21 +199,21 @@ nav{transform:translate3d(calc(var(--mx)*var(--pr)*var(--dp)*-9px),calc(var(--my
 <div class="phone">
   <div id="bgs"></div>
   <div class="layer" id="orbLayer"><div class="orb" id="sun"></div><div class="orb" id="moon"></div><div id="clouds"></div></div>
-  <canvas id="fx"></canvas>
+  <canvas id="fx" aria-hidden="true"></canvas>
   <div class="layer" id="flash"></div>
   <main id="main"></main>
-  <nav class="glass" id="nav"><div id="navScroll"><div id="track"><div id="pill"></div><div id="navItems"></div></div></div></nav>
+  <nav class="glass" id="nav" aria-label="Main"><div id="navScroll"><div id="track"><div id="pill"></div><div id="navItems"></div></div></div></nav>
 
-  <div id="sheet" aria-hidden="true">
+  <div id="sheet" role="dialog" aria-label="Search places" aria-hidden="true" inert>
     <div class="sh-top">
-      <input class="sh-in" id="q" type="search" placeholder="Search any city or country…" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="search">
+      <input class="sh-in" id="q" type="search" aria-label="Search city or country" placeholder="Search any city or country…" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="search">
       <button class="sh-x" id="closeSheet" aria-label="Close search">✕</button>
     </div>
     <div class="sh-list" id="shList"></div>
   </div>
 
   <div id="scrim"></div>
-  <div id="set" class="glass" role="dialog" aria-label="Glass and motion settings" aria-hidden="true">
+  <div id="set" class="glass" role="dialog" aria-label="Glass and motion settings" aria-hidden="true" inert>
     <div class="set-h"><span>Glass &amp; motion</span><button class="u glass" id="setDone">Done</button></div>
     <label class="rowr"><span>Transparency</span><output id="o_tr"></output><input type="range" id="r_tr" min="0" max="100"><small>Higher = clearer glass</small></label>
     <label class="rowr"><span>Blur</span><output id="o_bl"></output><input type="range" id="r_bl" min="0" max="100"></label>
@@ -578,7 +578,15 @@ function renderError(p) {
     <div class="card glass"><div class="sum">Check your internet connection, then tap here to try again.</div></div>
   </div>`;
   bindUnit();
-  $('#main').querySelector('.card').onclick = () => show(true);
+  /* the retry card is the only way back online, so it has to be reachable
+     without a pointer: role + tabindex + Enter/Space (no visual change). */
+  const retry = $('#main').querySelector('.card');
+  retry.setAttribute('role', 'button');
+  retry.setAttribute('tabindex', '0');
+  retry.onclick = () => show(true);
+  retry.onkeydown = e => {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); show(true); }
+  };
 }
 
 const esc = s => String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
@@ -609,7 +617,7 @@ function render(p, w) {
     const lo = lows[i], hi = highs[i];
     const a = (lo - mn) / span * 100, b = (hi - mn) / span * 100;
     return `<div class="day"><em>${dayName(iso, i)}</em><i>${iconFor(d.weather_code[i], true)}</i>` +
-      `<small class="lo">${T(lo)}°</small><div class="rng"><s style="left:${a.toFixed(1)}%;right:${(100 - b).toFixed(1)}%"></s></div>` +
+      `<small class="lo">${T(lo)}°</small><div class="rng"><span style="left:${a.toFixed(1)}%;right:${(100 - b).toFixed(1)}%"></span></div>` +
       `<small>${T(hi)}°</small></div>`;
   }).join('');
 
@@ -662,14 +670,21 @@ function replayEnter() {                       // used to preview the bounce set
 
 function bindUnit() {
   const b = $('#unit');
-  if (b) b.onclick = () => {
+  if (b) {
+    // the button only ever shows "°C"/"°F", which reads badly aloud — give it
+    // a spoken name that says what the button is (the visible label is unchanged)
+    const unitName = () => 'Temperature unit: ' + (F ? 'Fahrenheit' : 'Celsius');
+    b.setAttribute('aria-label', unitName());
+    b.onclick = () => {
     F = !F;
     LS.set('lw_unit', F ? 'F' : 'C');
     b.textContent = '°' + (F ? 'F' : 'C');
+    b.setAttribute('aria-label', unitName());
     const p = places[cur];
     const key = p.id || (p.lat + ',' + p.lon);
     if (p.lat && cache[key]) render(p, cache[key]);
-  };
+    };
+  }
 }
 
 /* ---------- bottom nav: persistent buttons + sliding liquid lens ---------- */
@@ -788,6 +803,7 @@ let stT;
 function openSheet() {
   tab = 'cities'; nav();
   sheet.classList.add('open');
+  sheet.removeAttribute('inert');
   sheet.setAttribute('aria-hidden', 'false');
   qEl.value = '';
   paintSheet('');
@@ -798,9 +814,15 @@ function openSheet() {
 }
 function closeSheet() {
   if (tab === 'cities') { tab = 'home'; nav(); }
+  const hadFocus = sheet.contains(document.activeElement);   // focus would land on <body> once the panel goes inert
   sheet.classList.remove('open');
   sheet.setAttribute('aria-hidden', 'true');
+  sheet.setAttribute('inert', '');
   qEl.blur();
+  if (hadFocus) {
+    const back = $('#openSearch');
+    if (back) { try { back.focus({ preventScroll: true }); } catch (e) {} }
+  }
 }
 $('#closeSheet').onclick = closeSheet;
 
@@ -879,7 +901,7 @@ function paintSheet(q, results) {
   const here = places[cur];
   let html = `<div style="display:flex;gap:8px;margin-bottom:6px">
       <button class="sh-loc" id="shLoc" style="flex:1;margin:0">📍 Use my current location</button>
-      ${here && here.lat ? '<button class="sh-r" id="shRefresh" title="Refresh forecast">↻</button>' : ''}
+      ${here && here.lat ? '<button class="sh-r" id="shRefresh" title="Refresh forecast" aria-label="Refresh forecast">↻</button>' : ''}
     </div>`;
   if (saved.length) {
     html += `<div class="sh-h">Saved places</div>` + saved.map(p =>
@@ -1133,16 +1155,26 @@ function paintSettings() {
     $('#o_' + key).textContent = SET[key] + '%';
   }
 }
+let setReturnFocus = null;
 function openSettings() {
   tab = 'set'; nav();
   paintSettings();
+  if (document.activeElement && document.activeElement !== document.body) setReturnFocus = document.activeElement;
+  setEl.removeAttribute('inert');
   setEl.classList.add('open'); scrim.classList.add('open');
   setEl.setAttribute('aria-hidden', 'false');
+  const first = $('#r_tr');                       // land inside the panel, not behind it
+  if (first) { try { first.focus({ preventScroll: true }); } catch (e) {} }
 }
 function closeSettings() {
   if (tab === 'set') { tab = 'home'; nav(); }
   setEl.classList.remove('open'); scrim.classList.remove('open');
   setEl.setAttribute('aria-hidden', 'true');
+  setEl.setAttribute('inert', '');
+  const back = setReturnFocus && document.contains(setReturnFocus) && !setReturnFocus.closest('#set')
+    ? setReturnFocus : navItems.querySelector('button[data-tab="home"]');
+  setReturnFocus = null;
+  if (back) { try { back.focus({ preventScroll: true }); } catch (e) {} }
 }
 for (const key of ['tr', 'bl', 'bo', 'dp', 'pr']) {
   const inp = $('#r_' + key);
