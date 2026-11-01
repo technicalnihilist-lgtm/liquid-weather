@@ -180,6 +180,32 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   are the randomly generated cloud widths.
 - `versionCode 7` / `versionName 1.2.4`, same signing key, installs over 1.2.3.
 
+## [1.3] — 2026-11-01
+
+### Fixed
+- **A corrected device clock could freeze the forecast on screen.** Elapsed time
+  was measured with `Date.now()`, so a wall clock that was set forward at boot
+  (a flat battery, a first boot with no time source yet) and then corrected
+  backwards by the network made the cached forecast look fresh for as long as
+  the skew lasted: `show()` reused the cache instead of refetching, and the
+  ten-minute refresh in `autoRefresh()` compared against a timestamp in the
+  future, so it returned early every time. The app sat on one forecast — one
+  "Now" column, one set of hour labels — until the clock caught up, which can be
+  hours. Elapsed time for both the cache TTL and the refresh interval is now
+  read from the monotonic clock (`performance.now()`), which cannot run
+  backwards; the cache is in memory for a single session, so its timestamps stay
+  comparable.
+
+### Notes
+- This is the day's release and carries the day's earlier fixes: keyboard and
+  screen-reader access to the closed panels and across re-renders (1.2.1,
+  1.2.3), validation of saved state so a bad write cannot blank the app (1.2.2),
+  and the network hardening — truncated payloads rejected before caching, one
+  retry on a busy server, superseded requests cancelled (1.2.4).
+- No visual change: with the same payload the rendered DOM is byte-identical to
+  1.2.4 (same node count, same markup, same hour and day labels).
+- `versionCode 8` / `versionName 1.3`, same signing key, installs over 1.2.4.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
@@ -215,7 +241,8 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.2.4...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.3...HEAD
+[1.3]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3
 [1.2.4]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.2.4
 [1.2.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.2.2
 [1.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.2
