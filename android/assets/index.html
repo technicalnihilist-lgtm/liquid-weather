@@ -320,6 +320,11 @@ function cleanPlace(p) {
   if (myLoc) out.myLoc = true;
   return out;
 }
+/* A coordinate of exactly 0 is a real coordinate (the equator, the prime
+   meridian) but falsy: `!p.lat` read it as "no fix yet", so such a place was
+   never fetched and the app showed the "Locating…" skeleton for ever. */
+const hasFix = p => !!p && typeof p.lat === 'number' && typeof p.lon === 'number'
+  && isFinite(p.lat) && isFinite(p.lon);
 let places = LS.get('lw_places', null);
 places = Array.isArray(places) ? places.map(cleanPlace).filter(Boolean) : [];
 let sawMyLoc = false;
@@ -534,14 +539,36 @@ async function loadWeather(place, signal) {
 }
 
 /* ---------- geolocation ---------- */
+/* The `timeout` option only starts once a permission decision exists: a prompt
+   that is never answered, or an Android WebView whose
+   onGeolocationPermissions callback is never invoked (the activity can be
+   torn down while the system dialog is up), leaves the callback pending for
+   good. locate() then never settles and the app sits on the "Locating…"
+   skeleton with no retry card and no way out. A watchdog guarantees the
+   promise settles, a little after the browser's own 12s deadline. */
+const GEO_WATCHDOG = 15000;
 function getPosition() {
   return new Promise((res, rej) => {
     if (!navigator.geolocation) return rej(new Error('unsupported'));
-    navigator.geolocation.getCurrentPosition(
-      p => res({ lat: p.coords.latitude, lon: p.coords.longitude }),
-      e => rej(e),
-      { enableHighAccuracy: false, timeout: 12000, maximumAge: 10 * 60 * 1000 }
-    );
+    let done = false;
+    const timer = setTimeout(() => { if (!done) { done = true; rej(new Error('timeout')); } }, GEO_WATCHDOG);
+    const finish = (fn, v) => { if (done) return; done = true; clearTimeout(timer); fn(v); };
+    try {
+      navigator.geolocation.getCurrentPosition(
+        p => {
+          const c = (p && p.coords) || {};
+          const lat = c.latitude, lon = c.longitude;
+          /* a partial position object used to be passed straight through, and
+             every later `!p.lat` test then left the skeleton up for good */
+          if (typeof lat !== 'number' || typeof lon !== 'number' || !isFinite(lat) || !isFinite(lon)) {
+            finish(rej, new Error('no coords')); return;
+          }
+          finish(res, { lat, lon });
+        },
+        e => finish(rej, e),
+        { enableHighAccuracy: false, timeout: 12000, maximumAge: 10 * 60 * 1000 }
+      );
+    } catch (e) { finish(rej, e); }
   });
 }
 async function reverseName(lat, lon) {
@@ -578,20 +605,24 @@ async function locate(silent) {
       toast(isFile
         ? 'Browsers block location for local files. Tap the city name and pick yours — everything else works.'
         : 'Location is blocked. Tap the city name and pick your city — everything works without it.', 6000);
-      if (!el.lat) fallbackPlace();
+      if (!hasFix(el)) fallbackPlace();
     } else {
       toast('Could not reach your location. Tap the city name to retry.', 4200);
-      if (!el.lat) fallbackPlace();
+      if (!hasFix(el)) fallbackPlace();
     }
   }
 }
 function fallbackPlace() {
   // No permission: keep the app useful with a sensible default the user can change.
   const el = places.find(p => p.myLoc);
-  if (el && !el.lat) {
+  if (el && !hasFix(el)) {
     Object.assign(el, { name: 'New Delhi', sub: 'India', lat: 28.6139, lon: 77.2090, myLoc: false, id: 'c28.6139,77.2090' });
     savePlaces(); nav();
-    if (cur === 0) show(true);
+    /* Re-render only if the row we just filled is the one on screen. This used
+       to test `cur === 0`, so with the My Location row anywhere but first the
+       app kept its "Locating…" skeleton for ever: the location had failed, the
+       row had been given New Delhi's coordinates, and nothing was ever drawn. */
+    if (places.indexOf(el) === cur) show(true);
   }
 }
 
@@ -599,7 +630,7 @@ function fallbackPlace() {
 async function show(force) {
   const p = places[cur];
   if (!p) return;
-  if (!p.lat || !p.lon) { renderSkeleton(p); return; }
+  if (!hasFix(p)) { renderSkeleton(p); return; }
   const my = ++showSeq;                       // newest request wins, older ones are dropped
   if (fcCtl) fcCtl.abort();                   // and the superseded request is cancelled, not left running
   const ctl = new AbortController();
@@ -670,7 +701,7 @@ function renderSkeleton(p) {
   holdFocusIn('#main');
   $('#main').innerHTML = `<div class="page">
     <div class="bar"><button class="loc" id="openSearch"><span>📍 ${esc(p.name)}</span></button><span class="ub"><button class="u glass" id="unit">°${F ? 'F' : 'C'}</button></span></div>
-    <div class="hero"><h1>${esc(p.name)}</h1><div class="temp">--°</div><div class="cond"><span class="spin"></span>${p.lat ? 'Loading forecast…' : 'Locating…'}</div><div class="hl">&nbsp;</div></div>
+    <div class="hero"><h1>${esc(p.name)}</h1><div class="temp">--°</div><div class="cond"><span class="spin"></span>${hasFix(p) ? 'Loading forecast…' : 'Locating…'}</div><div class="hl">&nbsp;</div></div>
     <div class="card glass"><div class="sum"><span class="skel" style="display:block;height:16px;width:88%"></span></div></div>
     <div class="card glass"><div class="lbl">🕐 Hourly forecast</div><div class="skel" style="height:88px"></div></div>
     <div class="card glass"><div class="lbl">📅 7-day forecast</div><div class="skel" style="height:220px"></div></div>
@@ -797,7 +828,7 @@ function bindUnit() {
     b.setAttribute('aria-label', unitName());
     const p = places[cur];
     const key = p.id || (p.lat + ',' + p.lon);
-    if (p.lat && cache[key]) render(p, cache[key]);
+    if (hasFix(p) && cache[key]) render(p, cache[key]);
     };
   }
 }
@@ -903,7 +934,7 @@ function selectCity(i) {
   cur = i; savePlaces(); nav();
   $('#main').scrollTop = 0;
   const p = places[cur];
-  if (!p.lat) { renderSkeleton(p); locate(); } else show();
+  if (!hasFix(p)) { renderSkeleton(p); locate(); } else show();
 }
 
 navEl.onclick = e => {
@@ -1036,11 +1067,11 @@ function paintSheet(q, results) {
      pass no results at all, so `results.length` threw and the list kept showing
      the city that had just been deleted. */
   if (results === undefined) results = lastResults; else lastResults = results;
-  const saved = places.filter(p => p.lat);
+  const saved = places.filter(hasFix);
   const here = places[cur];
   let html = `<div style="display:flex;gap:8px;margin-bottom:6px">
       <button class="sh-loc" id="shLoc" style="flex:1;margin:0">📍 Use my current location</button>
-      ${here && here.lat ? '<button class="sh-r" id="shRefresh" title="Refresh forecast" aria-label="Refresh forecast">↻</button>' : ''}
+      ${here && hasFix(here) ? '<button class="sh-r" id="shRefresh" title="Refresh forecast" aria-label="Refresh forecast">↻</button>' : ''}
     </div>`;
   if (saved.length) {
     html += `<div class="sh-h">Saved places</div>` + saved.map(p =>
@@ -1163,7 +1194,7 @@ function removeSaved(i) {
     const next = listEl.querySelector('.rm') || $('#shLoc');
     if (next) { try { next.focus({ preventScroll: true }); } catch (e) {} }
   }
-  if (!places[cur].lat) locate(); else show();
+  if (!hasFix(places[cur])) locate(); else show();
 }
 
 listEl.addEventListener('keydown', e => {
@@ -1381,7 +1412,7 @@ tick();
 (function boot() {
   const p = places[cur];
   renderSkeleton(p);                            // bounce the app in right away, data follows
-  if (!p.lat) locate(true); else show(true);
+  if (!hasFix(p)) locate(true); else show(true);
 })();
 
 /* refresh when the tab comes back, and every 10 minutes */
@@ -1391,7 +1422,7 @@ function autoRefresh() {
   if (mono() - lastAuto < 10 * 60 * 1000) return;
   lastAuto = mono();
   const p = places[cur];
-  if (p && p.lat) show(true);
+  if (hasFix(p)) show(true);
 }
 document.addEventListener('visibilitychange', autoRefresh);
 setInterval(autoRefresh, 60 * 1000);

@@ -206,6 +206,46 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   1.2.4 (same node count, same markup, same hour and day labels).
 - `versionCode 8` / `versionName 1.3`, same signing key, installs over 1.2.4.
 
+## [1.3.1] — 2026-11-02
+
+### Fixed
+- **A location request that never answered left the app on the "Locating…"
+  skeleton for good.** `getCurrentPosition`'s own `timeout` only starts once a
+  permission decision exists, so a prompt that is never answered — or an Android
+  WebView whose `onGeolocationPermissions` callback is never invoked because the
+  activity was torn down while the system dialog was up — left the promise
+  pending for ever. Nothing else ran: no forecast, no retry card, no way out but
+  killing the app. A 15 s watchdog now settles the promise, and the existing
+  failure path (a short toast plus the default city) takes over.
+- **A position object without usable coordinates hung the same way.** The
+  success callback read `p.coords.latitude` directly, so a partial or malformed
+  position threw inside the browser's callback — outside every `try` — and the
+  promise never settled. Coordinates are now checked before they are accepted;
+  anything that is not two finite numbers is rejected into the normal failure
+  path.
+- **A failed location left the screen empty when "My Location" was not the first
+  saved place.** After a refusal the row is given New Delhi's coordinates, but
+  the repaint was guarded by `cur === 0` rather than by the row's own index, so
+  with My Location anywhere but first nothing was ever drawn and the skeleton
+  stayed up. It now repaints when the row it just filled is the one on screen.
+- **Coordinates of exactly 0 were treated as "no location yet".** The equator and
+  the prime meridian are real coordinates but falsy, and every "do we have a fix?"
+  test used a bare `!p.lat`: such a place was never fetched, showed "Locating…"
+  for ever, and was missing from the saved-places list and its refresh button.
+  A single `hasFix()` test (two finite numbers) is now used everywhere.
+- **Approximate location was reported as a refusal on Android 12+.** The
+  permission result was read from `results[0]`, which is the fine-location
+  answer only; a user who chose "Approximate location" (coarse granted, fine
+  denied) was told location was blocked and dropped to New Delhi even though a
+  coarse fix was available. Any granted result now counts, with a re-check of
+  the manifest permission as a backstop.
+
+### Notes
+- No visual change: with a granted fix the rendered `#main` is byte-identical to
+  1.3 (same node count, same markup, same hour and day labels), checked in
+  headless Chromium against the previous file with a fixed forecast payload.
+- `versionCode 9` / `versionName 1.3.1`, same signing key, installs over 1.3.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
@@ -241,7 +281,8 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.3...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3.1
 [1.3]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3
 [1.2.4]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.2.4
 [1.2.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.2.2

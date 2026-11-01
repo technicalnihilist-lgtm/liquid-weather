@@ -93,7 +93,16 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
         if (requestCode != REQ_LOCATION) return;
-        boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
+        /* Any granted result counts. `results[0]` alone is the FINE_LOCATION
+           answer, so on Android 12+ a user who picks "Approximate location"
+           (COARSE granted, FINE denied) was reported to the page as a refusal:
+           the app announced that location was blocked and dropped to New Delhi
+           even though a coarse fix was available. */
+        boolean granted = false;
+        for (int r : results) {
+            if (r == PackageManager.PERMISSION_GRANTED) granted = true;
+        }
+        if (!granted) granted = hasLocationPermission();
         if (geoCallback != null) {
             // Even when denied we hand control back to the page: it falls back to
             // a default city and the user can pick one from the search sheet.
