@@ -246,6 +246,26 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   headless Chromium against the previous file with a fixed forecast payload.
 - `versionCode 9` / `versionName 1.3.1`, same signing key, installs over 1.3.
 
+## [1.3.2] — 2026-11-02
+
+### Fixed
+- **An unrecognised weather code was drawn as a thunderstorm while everything
+  around it said "Cloudy".** `iconFor()` picks the glyph with range tests
+  (`code >= 95`, `code >= 61`, …), so a code with no entry in the WMO table — one
+  added to the model after this build, or a stray value in a response — fell
+  through to the icon of the highest range it happened to match: 97, 100, 120 and
+  200 all drew ⛈️ beside the hero's "Cloudy" and over the plain cloudy sky that
+  `scene()` had already chosen, and any code from 61 to 94 drew rain. The icon is
+  now taken from the same table the description and the scene come from, so an
+  unknown code reads as a coherent cloudy day in all three places it appears —
+  hero, hourly strip and 7-day row.
+
+### Notes
+- No visual change for any real forecast: all 28 documented WMO codes render
+  byte-identical DOM before and after, in both day and night states, checked in
+  headless Chromium with a fixed payload (56 states, zero console errors).
+- `versionCode 10` / `versionName 1.3.2`, same signing key, installs over 1.3.1.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
@@ -281,7 +301,8 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.3.2...HEAD
+[1.3.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3.2
 [1.3.1]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3.1
 [1.3]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3
 [1.2.4]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.2.4
