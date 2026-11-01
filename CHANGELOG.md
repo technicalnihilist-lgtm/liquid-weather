@@ -143,6 +143,43 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   settings open, offline) — same node count, same structure, same styles.
 - `versionCode 6` / `versionName 1.2.3`, same signing key, installs over 1.2.2.
 
+## [1.2.4] — 2026-11-01
+
+### Fixed
+- **A truncated forecast response could wedge the app on the loading skeleton
+  for good.** Open-Meteo can answer `200` with a body that is missing its
+  `hourly`/`daily` blocks — a proxy cutting the response short, or a field list
+  that changed. `render()` threw on `d.temperature_2m_max[0]` part-way through,
+  and because the payload had already been written to the cache before it was
+  drawn, every later attempt for that city re-threw the same error. `#main` kept
+  the "Loading forecast…" skeleton and the dimmed `loading` state, with no retry
+  card, so the only way out was to kill the app. Payloads are now validated
+  before they are cached (`usableForecast`), and the failure path can no longer
+  throw out of its own `catch`: a bad body is discarded and the normal offline
+  card with its retry is shown instead.
+- **A single rate-limited request threw the app into "Offline".** The free
+  Open-Meteo tiers answer `429` under a burst — several cities switched quickly,
+  or a few devices behind one address — and every non-2xx response was treated
+  as a permanent failure, so the user had to tap the retry card by hand. A
+  request the server was merely too busy to serve (`408`, `425`, `429`, `5xx`)
+  now gets one more attempt after a short pause that honours `Retry-After`
+  (capped at 2s). A rejected request (`400`, `404`), a network error and a
+  timeout are still not repeated, so an offline device still fails at the normal
+  deadline instead of waiting three times as long.
+- **Superseded forecast requests were left running.** `show()` only ignored the
+  answer of a request it had replaced (`showSeq`); the request itself kept
+  downloading to its 12s timeout. Switching cities three times on a slow link
+  left four forecast downloads open at once, three of them useless. The
+  in-flight request is now cancelled through an `AbortController` as soon as a
+  newer one starts — four concurrent downloads became two, three of them
+  cancelled.
+
+### Notes
+- No visual change: with the same payload the rendered DOM is byte-identical to
+  1.2.3 (same node count, same markup) and the only computed-style differences
+  are the randomly generated cloud widths.
+- `versionCode 7` / `versionName 1.2.4`, same signing key, installs over 1.2.3.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
@@ -178,7 +215,8 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.2.4...HEAD
+[1.2.4]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.2.4
 [1.2.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.2.2
 [1.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.2
 [1.1]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.1

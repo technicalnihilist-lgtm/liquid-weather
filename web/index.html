@@ -333,7 +333,7 @@ let curRaw = toNum(LS.get('lw_cur', 0));
 let cur = isFinite(curRaw) ? Math.floor(curRaw) : 0;
 cur = Math.max(0, Math.min(cur, places.length - 1));   // negative / huge / NaN indexes used to blank the app
 const cache = {};          // id -> weather payload
-let lastKey = '', dirNext = 1, showSeq = 0;
+let lastKey = '', dirNext = 1, showSeq = 0, fcCtl = null;
 
 const savePlaces = () => { LS.set('lw_places', places); LS.set('lw_cur', cur); };
 
@@ -457,15 +457,37 @@ function applyHeldFocus() {
   if (el && !el.closest('[inert]')) { try { el.focus({ preventScroll: true }); } catch (e) {} }
 }
 
-/* ---------- network ---------- */
-async function getJSON(url, timeout) {
+/* ---------- network ----------
+   getJSON takes an optional caller signal so a request that is no longer wanted
+   (the user moved to another city) can be cancelled instead of running to its
+   timeout. A server that is merely busy — 408/425/429/5xx — gets exactly one
+   more attempt after a short pause (honouring Retry-After, capped), because the
+   free Open-Meteo tiers answer 429 under a burst; a request the server rejected
+   (400/404) is never repeated, and neither is a network error or a timeout, so
+   a genuinely offline device still fails at the normal deadline. */
+const RETRYABLE = { 408: 1, 425: 1, 429: 1, 500: 1, 502: 1, 503: 1, 504: 1 };
+async function getJSON(url, timeout, signal) {
   const ctl = new AbortController();
   const id = setTimeout(() => ctl.abort(), timeout || 12000);
+  const relay = () => ctl.abort();
+  if (signal) {
+    if (signal.aborted) ctl.abort();
+    else signal.addEventListener('abort', relay, { once: true });
+  }
   try {
-    const r = await fetch(url, { signal: ctl.signal, headers: { Accept: 'application/json' } });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return await r.json();
-  } finally { clearTimeout(id); }
+    for (let attempt = 0; ; attempt++) {
+      const r = await fetch(url, { signal: ctl.signal, headers: { Accept: 'application/json' } });
+      if (r.ok) return await r.json();
+      if (attempt || !RETRYABLE[r.status]) throw new Error('HTTP ' + r.status);
+      const after = parseInt(r.headers.get('Retry-After'), 10);
+      const wait = Math.min(2000, Math.max(300, isFinite(after) ? after * 1000 : 300));
+      await new Promise(res => setTimeout(res, wait));
+      if (ctl.signal.aborted) throw new Error('aborted');
+    }
+  } finally {
+    clearTimeout(id);
+    if (signal) signal.removeEventListener('abort', relay);
+  }
 }
 
 const FORECAST = 'https://api.open-meteo.com/v1/forecast';
@@ -479,8 +501,28 @@ function forecastURL(lat, lon) {
   });
   return FORECAST + '?' + p.toString();
 }
-async function loadWeather(place) {
-  return getJSON(forecastURL(place.lat, place.lon));
+/* A forecast payload is only usable if every block the renderer reads is
+   present. Open-Meteo can answer 200 with a truncated body (a proxy cutting the
+   response, or a field list it no longer serves); the renderer used to throw
+   halfway through on `d.temperature_2m_max[0]`, and because the payload had
+   already been written to the cache, every later attempt threw again and the
+   app sat on the loading skeleton for good. Validate before it is cached. */
+function usableForecast(w) {
+  if (!w || typeof w !== 'object' || !w.current || !w.hourly || !w.daily) return false;
+  const c = w.current, h = w.hourly, d = w.daily;
+  return typeof c.temperature_2m === 'number' && typeof c.weather_code === 'number'
+    && typeof c.is_day === 'number'
+    && Array.isArray(h.time) && h.time.length > 0
+    && Array.isArray(h.temperature_2m) && Array.isArray(h.weather_code) && Array.isArray(h.is_day)
+    && Array.isArray(d.time) && d.time.length > 0
+    && Array.isArray(d.temperature_2m_max) && d.temperature_2m_max.length === d.time.length
+    && Array.isArray(d.temperature_2m_min) && d.temperature_2m_min.length === d.time.length
+    && Array.isArray(d.weather_code) && d.weather_code.length === d.time.length;
+}
+async function loadWeather(place, signal) {
+  const w = await getJSON(forecastURL(place.lat, place.lon), 12000, signal);
+  if (!usableForecast(w)) throw new Error('incomplete forecast payload');
+  return w;
 }
 
 /* ---------- geolocation ---------- */
@@ -551,12 +593,15 @@ async function show(force) {
   if (!p) return;
   if (!p.lat || !p.lon) { renderSkeleton(p); return; }
   const my = ++showSeq;                       // newest request wins, older ones are dropped
+  if (fcCtl) fcCtl.abort();                   // and the superseded request is cancelled, not left running
+  const ctl = new AbortController();
+  fcCtl = ctl;
   const key = p.id || (p.lat + ',' + p.lon);
   try {
     let w = cache[key];
     if (!w || force || Date.now() - w.at > 10 * 60 * 1000) {
       if (!w && lastKey) $('#main').classList.add('loading');
-      w = await loadWeather(p);
+      w = await loadWeather(p, ctl.signal);
       w.at = Date.now();
       cache[key] = w;
     }
@@ -564,7 +609,12 @@ async function show(force) {
     render(p, w);
   } catch (e) {
     if (my !== showSeq) return;
-    if (cache[key]) render(p, cache[key]); else renderError(p);
+    /* a cached payload is shown rather than an error card, but it must not be
+       able to throw out of the handler — that left #main half-built and the
+       loading tint on, with no retry card to escape from. */
+    const stale = cache[key];
+    if (stale) { try { render(p, stale); return; } catch (_) {} }
+    renderError(p);
   }
 }
 
