@@ -270,6 +270,14 @@ const WMO = {
 const codeInfo = c => WMO[c] || ['Cloudy','cloud'];
 function iconFor(code, isDay) {
   const d = !!isDay;
+  /* A code with no entry in WMO is described as "Cloudy" and painted with the
+     cloud scene. The range tests below used to claim it anyway: any code at or
+     above 95 — including one Open-Meteo might start sending after a model
+     change — was drawn as a thunderstorm next to "Cloudy" over a plain cloudy
+     sky, and every code from 61 up was drawn as rain. Fall back to the same
+     glyph the rest of the app falls back to. All 28 documented codes are in
+     WMO, so nothing they render changes. */
+  if (!WMO[code]) return '☁️';
   if (code === 0) return d ? '☀️' : '🌙';
   if (code === 1) return d ? '🌤️' : '🌙';
   if (code === 2) return d ? '⛅' : '☁️';
