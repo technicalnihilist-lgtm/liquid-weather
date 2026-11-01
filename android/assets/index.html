@@ -300,11 +300,38 @@ const dayName = (iso, i) => i === 0 ? 'Today'
   : new Date(iso + 'T12:00').toLocaleDateString(undefined, { weekday: 'short' });
 
 /* ---------- state ---------- */
-let places = LS.get('lw_places', null);
-if (!Array.isArray(places) || !places.length) {
-  places = [{ id: 'loc', name: 'My Location', sub: '', lat: null, lon: null, myLoc: true }];
+/* Saved state is untrusted input: a quota error can truncate a write, an older
+   build can leave a different shape behind, and anything can be edited by hand.
+   Everything read back is validated here, because a single bad row used to take
+   the whole app down at boot (places[cur] was undefined and the first render
+   threw, leaving a blank screen). */
+const MY_LOC = () => ({ id: 'loc', name: 'My Location', sub: '', lat: null, lon: null, myLoc: true });
+const toNum = v => typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? +v : NaN);
+function cleanPlace(p) {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
+  const myLoc = !!p.myLoc;
+  let lat = toNum(p.lat), lon = toNum(p.lon);
+  if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) { lat = null; lon = null; }
+  const name = typeof p.name === 'string' ? p.name.trim().slice(0, 80) : '';
+  if (lat === null && !myLoc) return null;             // no coordinates and not "My Location": unusable
+  const id = lat === null ? 'loc'
+    : (typeof p.id === 'string' && p.id ? p.id : 'c' + lat.toFixed(3) + ',' + lon.toFixed(3));
+  const out = { id, name: name || 'My Location', sub: typeof p.sub === 'string' ? p.sub.slice(0, 80) : '', lat, lon };
+  if (myLoc) out.myLoc = true;
+  return out;
 }
-let cur = Math.min(LS.get('lw_cur', 0) | 0, places.length - 1);
+let places = LS.get('lw_places', null);
+places = Array.isArray(places) ? places.map(cleanPlace).filter(Boolean) : [];
+let sawMyLoc = false;
+places = places.filter(p => {                          // at most one "My Location" row
+  if (!p.myLoc) return true;
+  if (sawMyLoc) return false;
+  sawMyLoc = true; return true;
+});
+if (!places.length) places = [MY_LOC()];
+let curRaw = toNum(LS.get('lw_cur', 0));
+let cur = isFinite(curRaw) ? Math.floor(curRaw) : 0;
+cur = Math.max(0, Math.min(cur, places.length - 1));   // negative / huge / NaN indexes used to blank the app
 const cache = {};          // id -> weather payload
 let lastKey = '', dirNext = 1, showSeq = 0;
 
@@ -1056,7 +1083,20 @@ listEl.onclick = e => {
 
 /* ---------- settings: transparency / blur / bounce ---------- */
 const SET_DEF = { tr: 50, bl: 50, bo: 70, dp: 60, pr: 55 };
-let SET = Object.assign({}, SET_DEF, LS.get('lw_set', {}));
+/* Same rule as the places list: only accept a number inside the slider's own
+   range, otherwise fall back to the default. A stored string or an out-of-range
+   number used to reach the CSS as "--k: NaN" / "blur(184px)", which broke the
+   glass and cost real GPU time. */
+function cleanSet(raw) {
+  const out = Object.assign({}, SET_DEF);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const key of Object.keys(SET_DEF)) {
+    const v = toNum(raw[key]);
+    if (isFinite(v)) out[key] = Math.max(0, Math.min(100, Math.round(v)));
+  }
+  return out;
+}
+let SET = cleanSet(LS.get('lw_set', {}));
 const linOK = !!(window.CSS && CSS.supports && CSS.supports('transition-timing-function', 'linear(0,1)'));
 const noMotion = matchMedia('(prefers-reduced-motion:reduce)').matches;
 

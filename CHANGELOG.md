@@ -76,6 +76,36 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   build.
 - `versionCode 4` / `versionName 1.2.1`, same signing key, installs over 1.2.
 
+## [1.2.2] — 2026-11-01
+
+### Fixed
+- **A damaged saved-places list could leave the app on a blank screen.** The
+  places array read back from local storage was only checked with
+  `Array.isArray(...) && length`, so a single unusable row (`null`, a string, an
+  object with no name and no coordinates) reached the first render, where
+  `places[cur].name` threw and nothing was ever painted. Rows are now validated
+  on load: entries are dropped unless they are objects with usable coordinates
+  (or the "My Location" row), coordinates stored as strings from an older build
+  are converted to numbers, and a place with no `id` gets one derived from its
+  coordinates. If nothing survives, the default "My Location" row is restored.
+- **A bad `lw_cur` index blanked the app.** The saved current-place index was
+  clamped only at the top (`Math.min`), so a negative value from a corrupt or
+  truncated write made `places[cur]` undefined and the boot render threw. It is
+  now parsed and clamped to `0 … places.length - 1`.
+- **Out-of-range or non-numeric glass settings broke the CSS.** The stored
+  settings object was merged into the defaults without checking it, so a value
+  such as `{"bl": 500, "tr": "abc"}` reached the stylesheet as
+  `backdrop-filter: blur(184px)` and `--k: NaN` — the glass lost its blur
+  entirely and every glass card paid for a 184px backdrop blur. Each of the five
+  settings is now accepted only if it parses to a finite number and is clamped to
+  the slider's own 0–100 range; anything else falls back to the default.
+
+### Notes
+- No visual change: with valid saved state the rendered DOM and the computed
+  styles of every major element are identical to 1.2.1 (checked in headless
+  Chromium against the previous file, with default and non-default settings).
+- `versionCode 5` / `versionName 1.2.2`, same signing key, installs over 1.2.1.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
@@ -111,7 +141,8 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.2...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.2.2
 [1.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.2
 [1.1]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.1
 [1.0]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.0
