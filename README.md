@@ -135,6 +135,7 @@ Everything needed to use, study, change and redistribute this app is in this rep
 - **Changes:** see [CHANGELOG.md](CHANGELOG.md).
 - **Hosted web version:** served from `web/` by GitHub Pages — https://technicalnihilist-lgtm.github.io/liquid-weather/
 - **Store submission:** ready-to-paste listing values, descriptions and direct screenshot links are in [STORE.md](STORE.md).
+- **Maintenance programme:** the November 2026 stability/performance passes are documented in [MAINTENANCE.md](MAINTENANCE.md).
 
 **About the signing key:** `android/release.keystore` is included so anyone can rebuild and keep updating the same install. It is a self-signed hobby key (password: `liquidweather`) — since the key is public, anyone could sign an APK claiming to be this app, so don't use this build for anything you'd put money or data behind. For a Play Store release, generate your own keystore and keep it private.
 
