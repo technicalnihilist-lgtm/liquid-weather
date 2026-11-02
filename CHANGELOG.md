@@ -493,6 +493,55 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   — so the published `LiquidWeather.apk` and `CHECKSUMS.txt` are unchanged and
   still match each other; CI builds 15/1.3.7 from these sources on push.
 
+## [1.3.8] — 2026-11-03
+
+### Fixed
+- **"Today" sat on yesterday's row, and the day's high, low and UV came from
+  yesterday.** The 7-day list labelled its first row "Today" by position, and
+  the hero's `H:`/`L:`, the summary's "High of … and a low of …" and the UV card
+  all read `daily[0]`, on the assumption that Open-Meteo's daily block always
+  starts on the city's current date. It does not, for the first hour or so after
+  local midnight: at 00:05 IST on 3 November a fresh Mumbai payload carries
+  `current.time` 2026-11-03T00:00 while `daily.time` still starts 2026-11-02 (the
+  same happens at 00:15 in Kathmandu; by 02:30 in Singapore the API has caught
+  up). The app then showed "Today" over Monday's weather with today — Tuesday —
+  labelled "Tue", and read the hero, summary and UV card from Monday: Mumbai
+  displayed a low of 27° when the coming night's low was 26°, and its UV card
+  carried Monday's 6.8 instead of Tuesday's 6.75. The row that is today is now
+  found by comparing `daily.time` with the date in the payload's own
+  `current.time` (`todayIndex()`), which is right for the city whether the
+  payload is fresh or stale, and the label, hero, summary and UV card all follow
+  it.
+
+### Notes
+- No visual change outside that window: with the payloads for London, New York,
+  Sydney and Kiritimati (all fetched live, all with `daily[0]` equal to the
+  city's today) the rendered `#main` is byte-identical to 1.3.7 — same markup
+  hash, same labels, same hero. Only the payload whose daily block starts on
+  yesterday changes, and there it changes to the correct row: the list reads
+  `Mon, Today, Wed, …`, the hero low goes 27° → 26° and the summary follows.
+- Zero console errors in every state, `node --check` clean on the extracted
+  script. Payloads with no `current.time`, and stale payloads whose daily block
+  does not contain today at all, resolve to row 0 exactly as before (identical
+  markup hash), so nothing regresses when the clock is missing.
+- Left alone deliberately: an hourly block that stops before the current hour
+  still fills the remaining cells with its last hour (a truncated block shows the
+  same hour repeatedly), `null` values in the hourly arrays still render as 0°,
+  and a malformed `daily.time` entry still prints "Invalid Date". All three need
+  a broken payload rather than a broken clock, so they belong to the payload
+  validation pass, not this one.
+- Left alone deliberately: a duplicate wall-clock hour on a DST fall-back day
+  would be matched to its first occurrence. Checked against the live API: on
+  1 November 2026 in New York the hourly block carries one entry per wall-clock
+  hour (00:00 … 23:00, 24 entries) with a single `utc_offset_seconds`, so no
+  duplicate is ever served and there is nothing to disambiguate.
+- `versionCode 16` / `versionName 1.3.8` in `AndroidManifest.xml` and
+  `build.sh`, same signing key. `android/assets/index.html` is byte-identical to
+  `web/index.html` (verified with `cmp`). The APK artifact was **not** rebuilt by
+  this pass — the maintenance run had no Android SDK or JDK available — so the
+  published `LiquidWeather.apk` and `CHECKSUMS.txt` are unchanged and still match
+  each other; CI builds 16/1.3.8 from these sources on push.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

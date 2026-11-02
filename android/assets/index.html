@@ -304,7 +304,7 @@ const hl = iso => {
   const a = h >= 12 ? 'PM' : 'AM';
   return (h % 12 || 12) + ' ' + a;
 };
-const dayName = (iso, i) => i === 0 ? 'Today'
+const dayName = (iso, today) => iso === today ? 'Today'
   : new Date(iso + 'T12:00').toLocaleDateString(undefined, { weekday: 'short' });
 
 /* ---------- state ---------- */
@@ -824,9 +824,32 @@ function hourIndex(w) {
   return n < 0 ? times.length - 1 : n;        // block ends before now: nearest hour, not midnight
 }
 
+/* The index of the daily row that is actually today. It used to be row 0 by
+   assumption — "the daily block starts today" — and Open-Meteo does not always
+   agree: for the first hour or so after local midnight its daily (and hourly)
+   block still starts on the day that has just ended. Fetched at 00:05 IST on
+   3 November, a Mumbai payload carries `current.time` 2026-11-03T00:00 with
+   `daily.time` starting 2026-11-02, so row 0 was labelled "Today" over
+   yesterday's weather while today's own row was labelled "Tue", and the hero's
+   H:/L:, the summary's high and low and the UV card all came from yesterday
+   (Mumbai showed a low of 27° when the coming night's low was 26°). The
+   payload's own clock is the one reference that is right for the city in every
+   case, fresh or stale, so "Today" is matched on the date instead of the
+   position. A payload whose block does start today — every payload outside
+   that window, and every payload once the API has caught up — resolves to row
+   0 and renders exactly as before. */
+function todayIndex(w) {
+  const now = (w.current && typeof w.current.time === 'string') ? w.current.time.slice(0, 10) : '';
+  const times = (w.daily && Array.isArray(w.daily.time)) ? w.daily.time : [];
+  if (!now || !times.length) return 0;
+  const i = times.indexOf(now);
+  return i < 0 ? 0 : i;                       // no row for today (stale payload): leave it at the first
+}
+
 function summarise(w, cond, code) {
   const c = w.current, d = w.daily;
-  const hi = Math.round(d.temperature_2m_max[0]), lo = Math.round(d.temperature_2m_min[0]);
+  const ti = todayIndex(w);
+  const hi = Math.round(d.temperature_2m_max[ti]), lo = Math.round(d.temperature_2m_min[ti]);
   const pop = (w.hourly.precipitation_probability || [])[hourIndex(w)];
   const day = c.is_day === 1;
   const base = {
@@ -847,7 +870,7 @@ function summarise(w, cond, code) {
   else if (cond === 'snow') parts.push('Roads may be slippery — allow extra travel time.');
   else if (cond === 'fog') parts.push('Drive with headlights on and leave extra space.');
   else if (cond === 'sun' && !day) parts.push('Light winds and no rain expected overnight.');
-  else if (cond === 'sun' && (+d.uv_index_max[0] || 0) >= 8) parts.push('UV is very high — sunscreen and shade around midday.');
+  else if (cond === 'sun' && (+d.uv_index_max[ti] || 0) >= 8) parts.push('UV is very high — sunscreen and shade around midday.');
   else if (cond === 'sun') parts.push('A good day to be outside.');
   parts.push(`High of ${T(hi)}° and a low of ${T(lo)}°.`);
   return parts.join(' ');
@@ -899,8 +922,10 @@ function render(p, w) {
   const isDay = c.is_day === 1;
   scene(cond, isDay);
 
-  const hiToday = Math.round(d.temperature_2m_max[0]);
-  const loToday = Math.round(d.temperature_2m_min[0]);
+  const ti = todayIndex(w);
+  const today = d.time[ti];
+  const hiToday = Math.round(d.temperature_2m_max[ti]);
+  const loToday = Math.round(d.temperature_2m_min[ti]);
 
   /* hourly — next 8 hours from now */
   const hi0 = hourIndex(w);
@@ -918,12 +943,12 @@ function render(p, w) {
   const days = d.time.map((iso, i) => {
     const lo = lows[i], hi = highs[i];
     const a = (lo - mn) / span * 100, b = (hi - mn) / span * 100;
-    return `<div class="day"><em>${dayName(iso, i)}</em><i>${iconFor(d.weather_code[i], true)}</i>` +
+    return `<div class="day"><em>${dayName(iso, today)}</em><i>${iconFor(d.weather_code[i], true)}</i>` +
       `<small class="lo">${T(lo)}°</small><div class="rng"><span style="left:${a.toFixed(1)}%;right:${(100 - b).toFixed(1)}%"></span></div>` +
       `<small>${T(hi)}°</small></div>`;
   }).join('');
 
-  const uv = +(d.uv_index_max[0] || 0);
+  const uv = +(d.uv_index_max[ti] || 0);
   const uvT = uv >= 11 ? 'Extreme' : uv >= 8 ? 'Very high' : uv >= 6 ? 'High' : uv >= 3 ? 'Moderate' : 'Low';
   const gust = Math.round(c.wind_gusts_10m);
   const wind = Math.round(c.wind_speed_10m);
