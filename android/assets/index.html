@@ -392,9 +392,23 @@ function seed() {
   const n = mode === 'storm' ? 260 : mode === 'rain' ? 170 : mode === 'snow' ? 110 : mode === 'stars' ? 90 : 0;
   P = Array.from({ length: n }, () => ({ x: Math.random() * W, y: Math.random() * H, v: Math.random(), r: Math.random() * 2 + .6 }));
   needClear = true;
+  startFx();
 }
 const still = matchMedia('(prefers-reduced-motion:reduce)').matches;
+/* The particle loop re-armed itself unconditionally at the end of every frame, so
+   it ran for the whole session even when there was nothing to draw: a clear,
+   cloudy or foggy scene seeds no particles at all, yet the app kept waking the
+   main thread on every animation frame (and with Reduce motion on it did that
+   for ever after the canvas had been cleared once). Nothing stopped it while
+   the page was hidden either — a WebView does not cancel rAF on its own. The
+   loop now ends as soon as the canvas is blank and nothing is falling, and
+   while the page is hidden, and starts again when a scene seeds particles, the
+   canvas is resized, or the page comes back. Particle speeds, counts and
+   timings are untouched. */
+let fxRaf = 0;
+const pageHidden = () => document.visibilityState === 'hidden';
 function tick() {
+  fxRaf = 0;
   if (P.length || needClear) { cx.clearRect(0, 0, W, H); needClear = false; }
   if (!still) for (const p of P) {
     if (mode === 'rain' || mode === 'storm') {
@@ -414,8 +428,9 @@ function tick() {
       cx.fillRect(p.x, p.y * .6, p.r, p.r);
     }
   }
-  requestAnimationFrame(tick);
+  if (!still && P.length) fxRaf = requestAnimationFrame(tick);
 }
+function startFx() { if (!fxRaf && !pageHidden()) fxRaf = requestAnimationFrame(tick); }
 let lt;
 function lightning() {
   clearTimeout(lt);
@@ -426,6 +441,17 @@ function lightning() {
     lightning();
   }, 2500 + Math.random() * 5000);
 }
+/* Away from the app there is nothing to paint and nothing to flash: stop the
+   frame loop and the lightning chain, and pick both up again on return. */
+document.addEventListener('visibilitychange', () => {
+  if (pageHidden()) {
+    if (fxRaf) { cancelAnimationFrame(fxRaf); fxRaf = 0; }
+    clearTimeout(lt);
+  } else {
+    startFx();
+    lightning();
+  }
+});
 
 /* ---------- apply a scene ---------- */
 function scene(cond, isDay) {
@@ -1478,7 +1504,7 @@ nav();
 size();
 addEventListener('resize', size);
 addEventListener('orientationchange', () => setTimeout(size, 250));
-tick();
+startFx();
 
 (function boot() {
   const p = places[cur];

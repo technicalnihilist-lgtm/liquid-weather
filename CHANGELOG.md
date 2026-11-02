@@ -319,6 +319,37 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   prompt), with zero console errors in every scenario.
 - `versionCode 11` / `versionName 1.3.3`, same signing key, installs over 1.3.2.
 
+## [1.3.4] — 2026-11-02
+
+### Fixed
+- **The particle canvas ran an animation frame for the entire session, whether
+  or not there was anything to draw.** `tick()` re-armed itself unconditionally
+  at the end of every frame, so the loop never ended: a clear, cloudy or foggy
+  scene seeds no particles at all, yet the app kept waking the main thread on
+  every animation frame — forever — to clear a canvas that was already blank.
+  With *Reduce motion* on it did the same, for ever, after the single clear it
+  needed. Nothing stopped it while the page was hidden either: a browser pauses
+  rAF for a hidden tab, but a WebView does not always, so a backgrounded app
+  kept scheduling frames and kept its lightning timer armed. The loop now ends
+  as soon as the canvas is blank and nothing is falling, and while the page is
+  hidden; it restarts when a scene seeds particles, when the canvas is resized,
+  or when the page becomes visible again, and the storm flash chain is paused
+  with it. Measured in headless Chromium with a fixed payload: a clear-sky day
+  went from 27 animation callbacks a second to 0, the same scene while hidden
+  from 36 to 0, and a rain scene still animates (10–14 a second, canvas still
+  painting) and still blanks the canvas when you switch to a clear city.
+
+### Notes
+- No visual change: rendered `#main` markup is byte-identical to 1.3.3 in four
+  states (clear day, rain, storm night, snow with reduce-motion), 222 nodes each,
+  and the computed styles of 20 key elements (sky layers, sun, moon, clouds,
+  cards, hourly, 7-day, nav, pill, canvas) are identical too — animation-phase
+  and randomly generated cloud properties aside. Zero console errors in every
+  scenario, and switching rain → clear leaves 0 painted pixels on the canvas.
+- Particle counts, speeds, drift and timings are untouched: only frames with
+  nothing to draw are no longer requested.
+- `versionCode 12` / `versionName 1.3.4`, same signing key, installs over 1.3.3.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
@@ -354,7 +385,8 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.3.2...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.3.4...HEAD
+[1.3.4]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3.4
 [1.3.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3.2
 [1.3.1]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3.1
 [1.3]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3
