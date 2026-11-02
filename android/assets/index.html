@@ -1062,6 +1062,7 @@ function openSheet() {
   try { qEl.focus({ preventScroll: true }); } catch (e) {}   // inside the tap, so iOS opens the keyboard
 }
 function closeSheet() {
+  clearTimeout(qTimer);        // a pending debounce would fire a search into a closed sheet
   if (tab === 'cities') { tab = 'home'; nav(); }
   const hadFocus = sheet.contains(document.activeElement);   // focus would land on <body> once the panel goes inert
   sheet.classList.remove('open');
@@ -1133,11 +1134,22 @@ const POPULAR = [
   ['La Paz','Bolivia',-16.4897,-68.1193],['Panama City','Panama',8.9824,-79.5199],['San Juan','Puerto Rico',18.4655,-66.1057]
 ];
 
+/* Matching compared the accented characters themselves, so the bundled list
+   could not be found by the name people actually type: "bogota", "sao paulo",
+   "cancun" and "turkiye" all answered "No place called …" although Bogotá,
+   São Paulo, Cancún and Türkiye sit in POPULAR — and with the geocoder
+   unreachable that message was the only answer the sheet could give. Both
+   sides are folded to plain letters before comparing; the name that is
+   displayed keeps its accents. */
+const fold = s => {
+  const v = String(s).toLowerCase();
+  return v.normalize ? v.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : v;
+};
 function localMatches(q) {
-  const s = q.trim().toLowerCase();
+  const s = fold(q.trim());
   if (!s) return [];
   return POPULAR.filter(c => {
-    const name = c[0].toLowerCase(), country = c[1].toLowerCase();
+    const name = fold(c[0]), country = fold(c[1]);
     return name.startsWith(s) || country.startsWith(s) ||
       name.split(/[\s-]+/).some(word => word.startsWith(s));
   }).slice(0, 8).map(c => ({ name: c[0], sub: c[1], lat: c[2], lon: c[3] }));
@@ -1191,6 +1203,16 @@ function paintSheet(q, results) {
 
 let qTimer, qSeq = 0;
 
+/* A geocoder can answer 200 with a row that carries no coordinates at all, or
+   with them as strings. dedupe() keys every row by pid(), which calls
+   toFixed(), so one such row threw inside search() — outside every try — and
+   the promise rejected: the sheet stayed on "Searching…" for good and the
+   typed query could never be completed. Rows are normalised and checked here,
+   before dedupe(), row() or addPlace() ever see them. */
+const usableResult = o => !!o && typeof o.name === 'string' && o.name.trim() !== ''
+  && typeof o.lat === 'number' && typeof o.lon === 'number'
+  && isFinite(o.lat) && isFinite(o.lon) && Math.abs(o.lat) <= 90 && Math.abs(o.lon) <= 180;
+
 async function remoteSearch(term) {
   try {
     const j = await getJSON('https://geocoding-api.open-meteo.com/v1/search?count=8&language=en&format=json&name=' + encodeURIComponent(term), 9000);
@@ -1202,17 +1224,18 @@ async function remoteSearch(term) {
       if (!bits.length && r.admin2) bits.push(r.admin2);
       return bits.join(', ');
     };
-    const list = (j.results || []).map(r => ({
-      name: r.name, sub: subOf(r), lat: r.latitude, lon: r.longitude
-    }));
+    const rows = Array.isArray(j.results) ? j.results : [];
+    const list = rows.filter(r => r && typeof r === 'object').map(r => ({
+      name: r.name, sub: subOf(r), lat: +r.latitude, lon: +r.longitude
+    })).filter(usableResult);
     if (list.length) return list;
   } catch (e) {}
   try {
     const j = await getJSON('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&q=' + encodeURIComponent(term), 9000);
-    return (j || []).map(r => {
+    return (Array.isArray(j) ? j : []).filter(r => r && typeof r === 'object').map(r => {
       const parts = String(r.display_name || '').split(', ');
       return { name: parts[0], sub: parts.slice(1, 3).join(', '), lat: +r.lat, lon: +r.lon };
-    }).filter(r => isFinite(r.lat) && isFinite(r.lon));
+    }).filter(usableResult);
   } catch (e) { return []; }
 }
 
@@ -1227,8 +1250,8 @@ function dedupe(list) {
 }
 
 function countryMatches(term) {
-  const t = term.toLowerCase();
-  return POPULAR.filter(c => c[1].toLowerCase().startsWith(t) && c[0].toLowerCase() !== t)
+  const t = fold(term);
+  return POPULAR.filter(c => fold(c[1]).startsWith(t) && fold(c[0]) !== t)
     .slice(0, 6).map(c => ({ name: c[0], sub: c[1], lat: c[2], lon: c[3] }));
 }
 
@@ -1237,7 +1260,10 @@ async function search(q) {
   const term = q.trim();
   if (term.length < 2) { paintSheet(q, localMatches(term)); return; }
   paintSheet(q, null);                                  // "Searching…"
-  let list = dedupe(await remoteSearch(term));
+  /* Belt and braces: whatever a geocoder hands back, the sheet must never be
+     left on "Searching…". */
+  let list = [];
+  try { list = dedupe(await remoteSearch(term)); } catch (e) { list = []; }
   const byCountry = countryMatches(term);               // e.g. "Japan" -> Tokyo, Osaka…
   if (byCountry.length) {
     const names = new Set(list.map(o => o.name.toLowerCase()));

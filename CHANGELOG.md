@@ -350,6 +350,43 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   nothing to draw are no longer requested.
 - `versionCode 12` / `versionName 1.3.4`, same signing key, installs over 1.3.3.
 
+## [1.3.5] — 2026-11-02
+
+### Fixed
+- **One unusable row from a geocoder froze the search sheet on "Searching…".**
+  Results were passed straight from the response into `dedupe()`, which keys
+  every row by `pid()` — and `pid()` calls `lat.toFixed(3)`. A row that arrived
+  without coordinates (a partial payload, or a place the model has no point
+  for), or with the coordinates as strings, threw inside `search()`, outside
+  every `try`: the promise rejected, nothing painted, and the sheet sat on
+  "Searching…" until the next keystroke. Rows are now normalised to numbers and
+  checked (a name, two finite coordinates inside their ranges) before
+  `dedupe()`, `row()` or `addPlace()` see them, and the wait for the geocoder is
+  wrapped so the sheet always ends on a list or on the "No place called …"
+  message.
+- **The bundled list could not be found by the name people type.** Matching
+  compared the accented characters themselves, so "bogota", "sao paulo",
+  "cancun" and "turkiye" all answered "No place called …" although Bogotá,
+  São Paulo, Cancún and Türkiye are in `POPULAR` — and with the geocoder
+  unreachable that message was the only answer the offline list could give.
+  Both sides are folded to plain letters before comparing (the displayed name
+  keeps its accents), so the accented query still works too.
+- **A pending search could fire after the sheet was closed.** The 320 ms
+  debounce was never cancelled on close, so tapping a result or the ✕ while
+  typing still sent a geocoder request for a list nobody could see. The timer
+  is cleared when the sheet closes.
+
+### Notes
+- No visual change: the rendered `#main` is byte-identical to 1.3.4 (same
+  3128-character markup, same FNV hash) with a fixed forecast payload, and so is
+  the result list for every query that already matched — checked in headless
+  Chromium against the previous file in four states (boot, online results,
+  empty geocoder payload, geocoder unreachable), zero console errors in each.
+- The malformed-payload case now renders the usable rows and logs nothing,
+  where 1.3.4 rejected with `TypeError: Cannot read properties of undefined
+  (reading 'toFixed')` and left the sheet on "Searching…".
+- `versionCode 13` / `versionName 1.3.5`, same signing key, installs over 1.3.4.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
