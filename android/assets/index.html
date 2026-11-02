@@ -576,14 +576,19 @@ async function loadWeather(place, signal) {
    failure is remembered for a few seconds so the render that follows does not
    start a second request and make the user wait out a second 12s deadline. */
 const preFail = {};                     // key -> monotonic time of a failed pre-fetch
-function prefetchForecast(p) {
+function prefetchForecast(p, ctl) {
   const key = p.id || (p.lat + ',' + p.lon);
-  return loadWeather(p, null).then(w => {
+  return loadWeather(p, ctl ? ctl.signal : null).then(w => {
     w.at = mono();
     cache[key] = w;
     delete preFail[key];
     return true;
-  }).catch(() => { preFail[key] = mono(); return false; });
+  }).catch(() => {
+    /* an abandoned pre-fetch is not a failed link: remembering it as one would
+       make the next render show the offline card over a request nobody wants */
+    if (!(ctl && ctl.signal.aborted)) preFail[key] = mono();
+    return false;
+  });
 }
 
 /* ---------- geolocation ---------- */
@@ -606,6 +611,7 @@ const GEO_NAME_WAIT = 2500;
    overwriting a fresh fix with a stale position, or toasting "Could not reach
    your location" over a screen that had just located successfully. */
 let locSeq = 0;
+let prefCtl = null;                         // the pre-fetch the current location request started
 function getPosition() {
   return new Promise((res, rej) => {
     if (!navigator.geolocation) return rej(new Error('unsupported'));
@@ -645,6 +651,19 @@ async function reverseName(lat, lon) {
   } catch (e) {}
   return { name: 'My Location', sub: `${lat.toFixed(2)}, ${lon.toFixed(2)}` };
 }
+/* A fix — or the New Delhi fallback — can land on a city that is already in the
+   list. The pinned row is keyed by its coordinates, so the saved copy and the
+   pinned row end up with the same id and the same name, and the Cities list
+   showed that city twice: two of the five slots for one place. The duplicate
+   copy is dropped, and `cur` stays on the row it was pointing at. */
+function dropTwin(keep) {
+  for (let i = places.length - 1; i >= 0; i--) {
+    if (places[i] === keep || places[i].id !== keep.id) continue;
+    places.splice(i, 1);
+    if (i < cur) cur--;
+  }
+  cur = Math.max(0, Math.min(cur, places.length - 1));
+}
 async function locate(silent) {
   const el = places.find(p => p.myLoc);
   if (!el) return;
@@ -662,9 +681,15 @@ async function locate(silent) {
     const wasId = el.id;
     el.id = 'c' + lat.toFixed(3) + ',' + lon.toFixed(3);
     if (wasId && wasId !== el.id) delete cache[wasId];
+    dropTwin(el);                             // never list the same place twice
     /* The forecast is requested now, beside the name lookup rather than behind
-       it: a geocoder that hangs must not be able to hold the forecast back. */
-    const fc = prefetchForecast(el);
+       it: a geocoder that hangs must not be able to hold the forecast back.
+       One pre-fetch at a time — a location request that had been replaced left
+       its download running to the 12s deadline beside the new one. */
+    if (prefCtl) prefCtl.abort();
+    const pctl = new AbortController();
+    prefCtl = pctl;
+    const fc = prefetchForecast(el, pctl);
     const nmP = reverseName(lat, lon);
     const late = await Promise.race([nmP, new Promise(r => setTimeout(() => r(null), GEO_NAME_WAIT))]);
     /* null means the budget ran out: paint with the same coordinate label
@@ -674,6 +699,7 @@ async function locate(silent) {
     el.name = nm.name; el.sub = nm.sub;
     savePlaces(); nav();
     await fc;
+    if (my !== locSeq) return;                // a newer location request owns the screen now
     if (cur === places.indexOf(el)) await show();
     if (!late) nmP.then(nm2 => {              // answered too late to hold the screen
       if (!nm2 || el.lat !== lat || el.lon !== lon) return;
@@ -709,15 +735,29 @@ function renameVisible(p) {
 function fallbackPlace() {
   // No permission: keep the app useful with a sensible default the user can change.
   const el = places.find(p => p.myLoc);
-  if (el && !hasFix(el)) {
-    Object.assign(el, { name: 'New Delhi', sub: 'India', lat: 28.6139, lon: 77.2090, myLoc: false, id: 'c28.6139,77.2090' });
-    savePlaces(); nav();
-    /* Re-render only if the row we just filled is the one on screen. This used
-       to test `cur === 0`, so with the My Location row anywhere but first the
-       app kept its "Locating…" skeleton for ever: the location had failed, the
-       row had been given New Delhi's coordinates, and nothing was ever drawn. */
-    if (places.indexOf(el) === cur) show(true);
+  if (!el || hasFix(el)) return;
+  const fb = { name: 'New Delhi', sub: 'India', lat: 28.6139, lon: 77.2090, id: 'c28.6139,77.2090' };
+  /* With New Delhi already saved, filling the pinned row with the same
+     coordinates left two identical "New Delhi" rows in the list and cost one of
+     the five slots. The pinned row is dropped and the saved one is selected. */
+  const twin = places.findIndex(p => p !== el && p.id === fb.id);
+  let target = el;
+  if (twin >= 0) {
+    target = places[twin];
+    const at = places.indexOf(el);
+    places.splice(at, 1);
+    if (at < cur) cur--;
+    cur = Math.max(0, Math.min(cur, places.length - 1));
+  } else {
+    Object.assign(el, fb, { myLoc: false });
   }
+  savePlaces(); nav();
+  /* Re-render only if the row we just filled — or the saved row it was merged
+     into — is the one on screen. This used to test `cur === 0`, so with the My
+     Location row anywhere but first the app kept its "Locating…" skeleton for
+     ever: the location had failed, the row had been given New Delhi's
+     coordinates, and nothing was ever drawn. */
+  if (places.indexOf(target) === cur) show(true);
 }
 
 /* ---------- weather fetch + render ---------- */

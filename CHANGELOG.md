@@ -387,6 +387,50 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   (reading 'toFixed')` and left the sheet on "Searching…".
 - `versionCode 13` / `versionName 1.3.5`, same signing key, installs over 1.3.4.
 
+## [1.3.6] — 2026-11-02
+
+### Fixed
+- **A location fix — or the New Delhi fallback — could put the same city in the
+  list twice.** The pinned "My Location" row is keyed by its coordinates once a
+  fix arrives, and `fallbackPlace()` writes New Delhi's coordinates into it;
+  neither checked whether another row already carried that key. With New Delhi
+  already saved, a refused location left two identical "New Delhi" rows, and
+  with Pune saved, locating to Pune left the pinned row and the saved row side
+  by side. Both showed in the Cities list and both counted towards the five-place
+  limit, so a slot was gone for a place the user already had. A duplicate copy is
+  now dropped: the pinned row keeps the id (so a search result still selects it)
+  and `cur` stays on the row that was on screen. With New Delhi already saved the
+  pinned row is dropped instead and the saved row selected, so the automatic
+  default never displaces a place the user chose.
+- **A superseded location request left its forecast download running.**
+  `locate()` pre-fetches the forecast beside the name lookup (1.3.3), but that
+  pre-fetch had no controller: a second location request — "Use my current
+  location" tapped again, a removal, the retry after a failed fix — started its
+  own download while the first ran on to its 12s deadline. The pre-fetch now
+  carries an `AbortController` that the next location request cancels, the same
+  rule `show()` already applies to forecasts, and an abandoned pre-fetch is no
+  longer recorded as a failed link, so the render that follows cannot show the
+  offline card over a request nobody wants. Measured against a forecast endpoint
+  that never answers: two concurrent downloads became one, the superseded one
+  reporting `AbortError`.
+- **A superseded location request could still paint.** `locate()` checked its
+  sequence number before writing the fix but not after awaiting the pre-fetch, so
+  a request that had been replaced could render its city over the newer one. It
+  re-checks after the wait.
+
+### Notes
+- No visual change: with the same payload the rendered `#main` is byte-identical
+  to 1.3.5, and the computed styles of ten key elements (hero, bar, cards,
+  hourly, 7-day, nav, canvas, sky layers, sun, moon) are identical, checked in
+  headless Chromium against the previous file. Zero console errors in nine
+  scenarios: granted fix, denied, no geolocation API, malformed position object,
+  a prompt that never answers, a geocoder that hangs, forecast unreachable,
+  search plus city switch, and the unit toggle.
+- The 1.3.1 fix for a failed location with "My Location" anywhere but first
+  still holds: denying while that row is on screen renders New Delhi, denying
+  while another city is on screen leaves that city alone.
+- `versionCode 14` / `versionName 1.3.6`, same signing key, installs over 1.3.5.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
