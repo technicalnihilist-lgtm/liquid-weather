@@ -431,6 +431,68 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   while another city is on screen leaves that city alone.
 - `versionCode 14` / `versionName 1.3.6`, same signing key, installs over 1.3.5.
 
+## [1.3.7] — 2026-11-02
+
+### Fixed
+- **A forecast with no usable clock in its `current` block was thrown away as
+  "Offline".** The hourly strip works out which hour is "now" from
+  `current.time`, and `hourIndex()` read it with `current.time.slice(0, 13)`
+  without checking it was there. A payload whose `current` block arrived
+  without `time` — a partial body, which `usableForecast()` accepted because it
+  only required the three values the hero prints — threw a `TypeError` out of
+  `render()`. The throw was caught by `show()` as if the *link* had failed, so
+  the app discarded a complete, perfectly good forecast and showed the offline
+  card; tapping that card re-fetched the same payload and failed the same way,
+  which left the retry as a dead end. `hourIndex()` is now total: it reads the
+  hourly block defensively, and a payload with no usable `current.time` renders
+  from the first hour it has instead of throwing.
+- **The cell marked "Now" could show midnight's weather.** When the hourly block
+  ended before the current hour (a truncated array, or an older payload still on
+  screen), the search for the current hour found nothing and the function
+  returned `0` — the first hour of the block. The strip then opened on 00:00's
+  temperature, labelled "Now", beside a hero drawn from the live current values
+  (27° in the hero, 20° in the "Now" cell), and the dew point, visibility and
+  "chance of precipitation in the next hour" all came from midnight as well. It
+  now falls back to the *last* hour the block actually contains — the nearest
+  available reading — instead of the start of the day.
+- **The focus-restore window was measured on the wall clock.** Every other
+  elapsed-time test in the app moved to the monotonic clock in 1.3, but the
+  four-second window that keeps a re-render from stealing focus still compared
+  `Date.now()` with a `Date.now()` deadline. A device whose clock the network
+  corrected backwards (a cold boot that guessed the date, a manual change) kept
+  that "few seconds" window open for as long as the skew lasted, so a background
+  refresh ten minutes later moved focus to the city button out from under a
+  screen-reader user; a clock corrected forwards closed the window before the
+  re-render it was meant for, and focus was dropped to `<body>` after all. The
+  window now uses the same `mono()` clock as the cache TTL and the refresh
+  interval.
+
+### Notes
+- No visual change: the rendered `#main` is byte-identical to 1.3.6 in seven
+  states (22:07 and 10:12 local, 00:05 just after midnight, 23:59, a New York
+  city read from an Indian device, a London DST-transition night, and a Sydney
+  city read from an Indian device) — same markup hash, same 248 nodes, same
+  hour labels, same "Today" row and weekday labels, identical computed styles of
+  14 key elements, zero console errors in every state.
+- Targeted checks, old file against new: with an hourly block that ends at 02:00
+  the "Now" cell goes from 20° (midnight) to 23° (the newest hour it has); with a
+  `current` block that has no `time` the screen goes from the offline card to the
+  full forecast; with the clock corrected 20 s backwards the focus window no
+  longer restores focus (it does with the clock corrected forwards), while a
+  hold taken a moment ago is still honoured.
+- Left alone deliberately: the "Today" label on the 7-day list stays index-based.
+  A payload left on screen across midnight shows yesterday as "Today", but the
+  only thing that could be compared against is the payload's own `current.date`
+  (stale in exactly that case) or the device's date (wrong for a city in another
+  timezone, e.g. New York seen from India at 00:30), so a "fix" here would trade
+  a rare wrong label for a common one.
+- `versionCode 15` / `versionName 1.3.7` in `AndroidManifest.xml` and
+  `build.sh`, same signing key. `android/assets/index.html` is byte-identical to
+  `web/index.html` (verified with `cmp`). The APK artifact itself was **not**
+  rebuilt by this pass — the maintenance run had no Android SDK or JDK available
+  — so the published `LiquidWeather.apk` and `CHECKSUMS.txt` are unchanged and
+  still match each other; CI builds 15/1.3.7 from these sources on push.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

@@ -486,18 +486,25 @@ function toast(msg, ms) {
    picking a city left keyboard and screen-reader users back at the top of the
    document. The id of the control that had focus is remembered for a few
    seconds (a short window, so a later background refresh can't steal focus)
-   and put back on the new copy of the same control. */
+   and put back on the new copy of the same control.
+   The window is measured on the monotonic clock, like every other elapsed-time
+   test in the app: it used to be compared with Date.now(), so a wall clock the
+   network corrected backwards (a cold boot that guessed the date, a manual
+   change) kept the "few seconds" window open for as long as the skew lasted and
+   a background refresh ten minutes later moved focus out from under the reader
+   — while a clock corrected forwards closed it before the re-render it was
+   meant for and focus was dropped to <body> after all. */
 let heldFocus = { id: '', until: 0 };
 function holdFocusIn(sel) {
   const a = document.activeElement;
   if (!a || a === document.body || !a.id) return;
   const host = document.querySelector(sel);
-  if (host && host.contains(a)) heldFocus = { id: a.id, until: Date.now() + 4000 };
+  if (host && host.contains(a)) heldFocus = { id: a.id, until: mono() + 4000 };
 }
-function holdFocusOn(id) { if (id) heldFocus = { id, until: Date.now() + 4000 }; }
+function holdFocusOn(id) { if (id) heldFocus = { id, until: mono() + 4000 }; }
 function applyHeldFocus() {
   const h = heldFocus; heldFocus = { id: '', until: 0 };
-  if (!h.id || Date.now() > h.until) return;
+  if (!h.id || mono() > h.until) return;
   const a = document.activeElement;
   if (a && a !== document.body) return;            // focus is already somewhere real
   const el = document.getElementById(h.id);
@@ -794,13 +801,27 @@ async function show(force) {
   }
 }
 
+/* The index of the hour the hourly strip starts at. It used to assume the
+   payload carried a well-formed `current.time` and that the hourly block
+   reached that hour: `current.time.slice(0,13)` threw on a payload without it
+   (the throw was caught as a *link* failure, so a complete forecast was thrown
+   away and the app claimed "Offline" — a card whose retry re-fetched the same
+   payload and failed again), and a block that ended before now returned 0, so
+   the cell marked "Now" showed midnight's temperature beside a hero drawn from
+   the live current values. Every hour the block does contain is still matched
+   exactly, so nothing changes for a complete payload; a payload with no usable
+   `current.time` falls back to the first hour it has, and one that ends early
+   falls back to its last hour instead of the start of the day. */
 function hourIndex(w) {
-  const now = w.current.time;                 // "2026-10-27T15:45"
-  const h = now.slice(0, 13) + ':00';
-  const i = w.hourly.time.indexOf(h);
+  const times = (w.hourly && Array.isArray(w.hourly.time)) ? w.hourly.time : [];
+  if (!times.length) return 0;
+  const now = (w.current && typeof w.current.time === 'string') ? w.current.time : '';
+  const h = now.length >= 13 ? now.slice(0, 13) + ':00' : '';
+  if (!h) return 0;                           // no usable clock in the payload
+  const i = times.indexOf(h);
   if (i >= 0) return i;
-  const n = w.hourly.time.findIndex(t => t >= h);
-  return n < 0 ? 0 : n;
+  const n = times.findIndex(t => t >= h);
+  return n < 0 ? times.length - 1 : n;        // block ends before now: nearest hour, not midnight
 }
 
 function summarise(w, cond, code) {
