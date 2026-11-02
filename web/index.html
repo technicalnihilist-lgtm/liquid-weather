@@ -379,16 +379,33 @@ for (let i = 0; i < 9; i++) {
 const cv = $('#fx'), cx = cv.getContext('2d');
 let P = [], mode = '', W = 0, H = 0;
 let DPR = 1, needClear = true;
+/* A resize event does not mean the canvas changed size. A phone browser fires
+   one every time its URL bar hides or the on-screen keyboard opens, and each one
+   used to reassign canvas.width/height: that throws away and reallocates the
+   whole backing store (430×900 at DPR 2 is about 3 MB of pixels), blanks the
+   canvas and re-seeds every particle — for a box that had not moved. Nothing to
+   do when the measurement is the one we already have. */
 function size() {
   const r = cv.getBoundingClientRect();
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = Math.max(1, Math.round(r.width));
-  H = Math.max(1, Math.round(r.height));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round(r.width));
+  const h = Math.max(1, Math.round(r.height));
+  if (w === W && h === H && dpr === DPR && cv.width === w * dpr && cv.height === h * dpr) return;
+  DPR = dpr; W = w; H = h;
   cv.width = W * DPR; cv.height = H * DPR;
   cx.setTransform(DPR, 0, 0, DPR, 0, 0);
   seed();
 }
+/* Every render() calls scene(), and scene() seeds the particles, so toggling
+   °C/°F or the ten-minute refresh re-randomised every drop on screen — the
+   whole field jumped to new positions under the reader's eyes — and allocated a
+   fresh array of up to 260 objects each time. The particle set only needs
+   rebuilding when the scene or the canvas itself changes. */
+let seedKey = '';
 function seed() {
+  const k = mode + '|' + W + 'x' + H + '@' + DPR;
+  if (k === seedKey) return;
+  seedKey = k;
   const n = mode === 'storm' ? 260 : mode === 'rain' ? 170 : mode === 'snow' ? 110 : mode === 'stars' ? 90 : 0;
   P = Array.from({ length: n }, () => ({ x: Math.random() * W, y: Math.random() * H, v: Math.random(), r: Math.random() * 2 + .6 }));
   needClear = true;
@@ -1492,8 +1509,19 @@ const noMotion = matchMedia('(prefers-reduced-motion:reduce)').matches;
   if (noMotion) { root.style.setProperty('--dp', '0'); root.style.setProperty('--pr', '0'); return; }
 
   const phone = document.querySelector('.phone');
+  /* The pointer handler used to measure the phone's box on every single
+     pointermove. The frame before had just written --mx/--my on the root, so the
+     style was dirty and each read flushed it again: a forced layout at the
+     pointer's full event rate (100+ a second on a fast screen, and every
+     pointermove of a finger drag). The box only changes when the layout does, so
+     it is measured once and dropped on resize or rotation. */
+  let phoneBox = null;
+  const phoneRect = () => phoneBox || (phoneBox = phone.getBoundingClientRect());
+  const dropBox = () => { phoneBox = null; };
+  addEventListener('resize', dropBox);
+  addEventListener('orientationchange', dropBox);
   phone.addEventListener('pointermove', e => {
-    const r = phone.getBoundingClientRect();
+    const r = phoneRect();
     P.px = cl(((e.clientX - r.left) / r.width - .5) * 2, -1, 1);
     P.py = cl(((e.clientY - r.top) / r.height - .5) * 2, -1, 1);
     queue();

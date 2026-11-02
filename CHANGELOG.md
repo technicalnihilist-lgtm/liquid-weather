@@ -542,6 +542,65 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   published `LiquidWeather.apk` and `CHECKSUMS.txt` are unchanged and still match
   each other; CI builds 16/1.3.8 from these sources on push.
 
+## [1.3.9] — 2026-11-03
+
+### Fixed
+- **A resize event reallocated the particle canvas even when nothing had
+  resized.** `size()` is bound to `resize`, and a phone browser fires that event
+  every time its URL bar hides, the on-screen keyboard opens, or a WebView
+  reports a viewport change — none of which move the canvas. Each event
+  reassigned `canvas.width`/`height`, which throws away and reallocates the whole
+  backing store (430×900 at DPR 2 is about 3 MB of pixels), blanks whatever was
+  drawn, and re-seeded every particle. `size()` now measures first and returns
+  when the box, the device pixel ratio and the backing store are the ones it
+  already has. Measured in headless Chromium: ten `resize` events that changed
+  nothing went from ten `canvas.width` assignments and 20 828 `Math.random()`
+  calls (twenty particle sets built and thrown away) to zero and 47.
+- **Every re-render re-randomised the whole particle field.** `render()` calls
+  `scene()`, `scene()` calls `seed()`, and `seed()` rebuilt the particle array
+  unconditionally — so toggling °C/°F, or the ten-minute background refresh
+  landing on the same weather, teleported every raindrop and snowflake to a new
+  random position under the reader's eyes and allocated a fresh array of up to
+  260 objects each time. The set is now keyed by the scene and the canvas size
+  and only rebuilt when one of those actually changes. Measured: a unit toggle
+  went from 683 `Math.random()` calls to 7, a same-scene refresh from 690 to 11,
+  while a real scene change (rain → thunderstorm) and a real canvas resize still
+  rebuild it (1 049 and 1 081 calls, unchanged).
+- **The parallax engine forced a layout on every pointermove.** The handler
+  measured `.phone` with `getBoundingClientRect()` on each pointer event, and
+  because the frame before had just written `--mx`/`--my` on the root the style
+  was dirty, so every read flushed a fresh layout — at the pointer's full event
+  rate, which on a 120 Hz screen is 120 forced layouts a second while the finger
+  moves. The box is now measured once and dropped on `resize` and
+  `orientationchange`. Measured: 100 pointermove events went from 100 box reads
+  to 1, and the `--mx`/`--my` values written for four fixed pointer positions
+  (and again after a viewport change) are byte-identical to 1.3.8.
+
+### Notes
+- No visual change: the rendered `#main` is byte-identical to 1.3.8 in eleven
+  states — clear, cloudy, overcast, fog, rain and snow by day, clear, rain and
+  thunderstorm by night, a thunderstorm with *Reduce motion* on, and the offline
+  card — same markup hash, same 222 nodes (111 on the offline card), same canvas
+  size, identical computed styles of twelve key elements, zero console errors in
+  every state (`node --check` clean on the extracted script).
+- The scene's particles, counts, speeds and timings are untouched: what changed
+  is when they are rebuilt, not what is drawn.
+- `versionCode 17` / `versionName 1.3.9` in `AndroidManifest.xml` and
+  `build.sh`, same signing key. `android/assets/index.html` is byte-identical to
+  `web/index.html` (verified with `cmp`). The APK artifact was **not** rebuilt by
+  this pass — the maintenance run had no Android SDK or JDK available — so the
+  published `LiquidWeather.apk` and `CHECKSUMS.txt` are unchanged and still match
+  each other; CI builds 17/1.3.9 from these sources on push.
+- Left alone deliberately: the backdrop blur on the glass cards (`blur(22px)` on
+  ten cards plus the nav and the sheet) is the single largest paint cost in the
+  app, but cutting it or reducing the blurred area would visibly change the glass
+  — it stays as it is, and the Blur slider is the user's own control over it.
+- Left alone deliberately: `--mx`/`--my` are still written while *Parallax* is at
+  0, where every transform multiplies them away. Skipping that needs a hook from
+  `applySettings()` into the depth engine (and a flush when the slider comes back
+  up); it is a real saving but only at one slider position, so it is noted rather
+  than rushed.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
