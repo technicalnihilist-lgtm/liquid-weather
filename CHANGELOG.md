@@ -266,6 +266,59 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   headless Chromium with a fixed payload (56 states, zero console errors).
 - `versionCode 10` / `versionName 1.3.2`, same signing key, installs over 1.3.1.
 
+## [1.3.3] — 2026-11-02
+
+### Fixed
+- **A reverse geocoder that never answered held the forecast back for sixteen
+  seconds.** `locate()` awaited `reverseName()` before it did anything else, and
+  `reverseName()` gives each of its two services a full 8 s deadline, so with a
+  geocoder that hangs (a blocked domain, a captive portal, a DNS blackhole on a
+  hotel network) the screen sat on "Locating…" for 16.4 s before the forecast
+  request had even been made. A forecast needs nothing but the coordinates, so
+  it is now requested the moment the fix arrives, alongside the name lookup, and
+  the name is given 2.5 s to turn up before the app paints with the same
+  coordinate label `reverseName()` itself returns when both services fail; a
+  name that arrives after that is filled into the header instead of being
+  dropped. Measured on a geocoder that never answers: forecast on screen in
+  2.9 s instead of 16.4 s, and in the ordinary case the first paint no longer
+  waits for the geocoder at all (the fetch overlaps it).
+- **The My Location row never took its coordinates as its id, so the city it
+  resolved to could be saved a second time.** The row kept the id `loc` for the
+  rest of the session while carrying real coordinates, so the de-duplication in
+  `addPlace()` could not recognise it: with My Location resolved to Pune,
+  searching "Pune" and tapping the result added a *second* Pune row — two
+  identical entries in a list that holds five, and one slot gone. The row is now
+  keyed by its coordinates (`c18.520,73.857`), the same key every other place
+  uses, so the search result selects the existing row. The forecast cache entry
+  under the old id is dropped at the same time, so the cache no longer keeps one
+  entry per city the device has passed through.
+- **A superseded location request could overwrite a newer one.** Nothing
+  sequenced `locate()` calls — boot, the city pill, the search sheet's "Use my
+  current location" and a removal all start one — so an older request that
+  answered last replaced a fresh fix with a stale position, and an older request
+  that *failed* last toasted "Could not reach your location. Tap the city name to
+  retry." over a screen that had just located successfully. `locate()` now
+  carries a sequence number, the same guard `show()` already uses for forecast
+  requests: only the newest request may write its result or report its failure.
+- **A failed pre-fetch no longer costs a second full timeout.** When the forecast
+  requested during `locate()` fails, the render that follows would otherwise ask
+  again and make the user wait out a second 12 s deadline before the retry card
+  appeared. A pre-fetch failure is remembered for five seconds and the retry card
+  is drawn straight away; a user-initiated retry (`force`) always tries again.
+  Checked against a forecast endpoint that never answers: the card appears at
+  12.4 s, the same as before (12.2 s).
+
+### Notes
+- No visual change: with the same payload the rendered `#main` is byte-identical
+  to 1.3.2 (124 nodes, same markup), and the computed styles of 17 key elements
+  (hero, bar, cards, hourly, 7-day, nav, pill, sun, moon) are identical, checked
+  in headless Chromium against the previous file.
+- Failure paths re-checked with the fix: denied, timeout, a malformed position
+  and a prompt that is never answered all still end on a rendered screen (New
+  Delhi with the matching toast, and the 15 s watchdog for the unanswered
+  prompt), with zero console errors in every scenario.
+- `versionCode 11` / `versionName 1.3.3`, same signing key, installs over 1.3.2.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

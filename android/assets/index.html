@@ -545,6 +545,20 @@ async function loadWeather(place, signal) {
   if (!usableForecast(w)) throw new Error('incomplete forecast payload');
   return w;
 }
+/* A forecast only needs the coordinates, so a freshly located place can be
+   fetched while the reverse geocoder is still talking (see locate()). The
+   failure is remembered for a few seconds so the render that follows does not
+   start a second request and make the user wait out a second 12s deadline. */
+const preFail = {};                     // key -> monotonic time of a failed pre-fetch
+function prefetchForecast(p) {
+  const key = p.id || (p.lat + ',' + p.lon);
+  return loadWeather(p, null).then(w => {
+    w.at = mono();
+    cache[key] = w;
+    delete preFail[key];
+    return true;
+  }).catch(() => { preFail[key] = mono(); return false; });
+}
 
 /* ---------- geolocation ---------- */
 /* The `timeout` option only starts once a permission decision exists: a prompt
@@ -555,6 +569,17 @@ async function loadWeather(place, signal) {
    skeleton with no retry card and no way out. A watchdog guarantees the
    promise settles, a little after the browser's own 12s deadline. */
 const GEO_WATCHDOG = 15000;
+/* How long the reverse geocoder may hold up the first paint of a forecast. Its
+   two services are given 8s each, so a geocoder that never answers used to keep
+   the whole screen on "Locating…" for 16s before the forecast request had even
+   started. The coordinates are enough to draw the forecast; the name is allowed
+   this long, then the app paints and fills the name in when it arrives. */
+const GEO_NAME_WAIT = 2500;
+/* Only the newest location request may write its result: the same three-line
+   guard show() uses. A slow older request used to land after a newer one —
+   overwriting a fresh fix with a stale position, or toasting "Could not reach
+   your location" over a screen that had just located successfully. */
+let locSeq = 0;
 function getPosition() {
   return new Promise((res, rej) => {
     if (!navigator.geolocation) return rej(new Error('unsupported'));
@@ -597,16 +622,42 @@ async function reverseName(lat, lon) {
 async function locate(silent) {
   const el = places.find(p => p.myLoc);
   if (!el) return;
+  const my = ++locSeq;                        // newest request wins
   if (!silent) toast('Getting your location…', 6000);
   try {
     const { lat, lon } = await getPosition();
+    if (my !== locSeq) return;                // superseded while we were waiting
     el.lat = lat; el.lon = lon;
-    const nm = await reverseName(lat, lon);
+    /* Key the row by its coordinates, the way every other place is keyed. The
+       row kept the id "loc" once a fix arrived, so the city it resolved to
+       could be saved a second time from search — two identical rows in the
+       five-place list — and the forecast cache kept one entry for every city
+       the device had ever been in. */
+    const wasId = el.id;
+    el.id = 'c' + lat.toFixed(3) + ',' + lon.toFixed(3);
+    if (wasId && wasId !== el.id) delete cache[wasId];
+    /* The forecast is requested now, beside the name lookup rather than behind
+       it: a geocoder that hangs must not be able to hold the forecast back. */
+    const fc = prefetchForecast(el);
+    const nmP = reverseName(lat, lon);
+    const late = await Promise.race([nmP, new Promise(r => setTimeout(() => r(null), GEO_NAME_WAIT))]);
+    /* null means the budget ran out: paint with the same coordinate label
+       reverseName itself returns when both services fail, and take the real
+       name when it turns up. */
+    const nm = late || { name: 'My Location', sub: `${lat.toFixed(2)}, ${lon.toFixed(2)}` };
     el.name = nm.name; el.sub = nm.sub;
     savePlaces(); nav();
-    if (cur === places.indexOf(el)) await show(true);
+    await fc;
+    if (cur === places.indexOf(el)) await show();
+    if (!late) nmP.then(nm2 => {              // answered too late to hold the screen
+      if (!nm2 || el.lat !== lat || el.lon !== lon) return;
+      el.name = nm2.name; el.sub = nm2.sub;
+      savePlaces(); nav();
+      if (cur === places.indexOf(el)) renameVisible(el);
+    });
     if (!silent) toast('Updated to your location');
   } catch (e) {
+    if (my !== locSeq) return;                // a superseded request's failure is not news
     const denied = e && (e.code === 1 || e.message === 'unsupported');
     const isFile = location.protocol === 'file:';
     if (denied) {
@@ -619,6 +670,15 @@ async function locate(silent) {
       if (!hasFix(el)) fallbackPlace();
     }
   }
+}
+/* The name can arrive after the forecast is already on screen. Repaint the two
+   places the name is printed instead of rebuilding the page: a rebuild would
+   replay the entry animation under the reader's eyes. */
+function renameVisible(p) {
+  const h = $('#main .hero h1');
+  if (h) h.textContent = p.name;
+  const s = $('#main .bar .loc span');
+  if (s) s.textContent = '📍 ' + p.name + (p.sub ? ', ' + p.sub : '');
 }
 function fallbackPlace() {
   // No permission: keep the app useful with a sensible default the user can change.
@@ -648,6 +708,9 @@ async function show(force) {
     let w = cache[key];
     if (!w || force || mono() - w.at > 10 * 60 * 1000) {
       if (!w && lastKey) $('#main').classList.add('loading');
+      /* a pre-fetch that has just failed means the link is down: go straight to
+         the retry card instead of paying for a second full timeout */
+      if (!force && preFail[key] && mono() - preFail[key] < 5000) throw new Error('pre-fetch failed');
       w = await loadWeather(p, ctl.signal);
       w.at = mono();
       cache[key] = w;
