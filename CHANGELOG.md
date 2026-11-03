@@ -712,7 +712,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   the offline card — and `node --check` clean on the extracted script.
 - `versionCode 19` / `versionName 1.4` in `AndroidManifest.xml` and `build.sh`,
   same signing key. `android/assets/index.html` is byte-identical to
-  `web/index.html` (verified with `cmp`).
+  `web/index.html` (verified with `cmp`), and the APK in the repo and on the
+  release page is CI's `Build APK` run for this commit: its bundled
+  `assets/index.html` matches the source byte for byte, it reports 19 / 1.4, it
+  is signed with the project's key (certificate SHA-256
+  `2035d69f…9e3b8b`, unchanged), and its digest is the one in `CHECKSUMS.txt`.
 - Left alone deliberately: the backdrop blur on the glass cards is still the
   largest single paint cost, and reducing it would visibly change the glass.
 - Left alone deliberately: toggling °C/°F still rebuilds the whole of `#main`
