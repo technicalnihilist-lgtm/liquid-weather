@@ -900,9 +900,19 @@ function summarise(w, cond, code) {
   const hi = Math.round(d.temperature_2m_max[ti]), lo = Math.round(d.temperature_2m_min[ti]);
   const pop = (w.hourly.precipitation_probability || [])[hourIndex(w)];
   const day = c.is_day === 1;
+  /* The cloudy sentence was picked with a two-way test, `code === 3 ? overcast
+     : partly cloudy`, so every code that is not exactly 3 got "Partly cloudy
+     with a few sunny spells" — including the codes the WMO table does not know,
+     which the hero calls "Cloudy", the sky paints as plain cloud and the icons
+     draw as ☁️. That left the summary card contradicting the rest of the screen
+     for any code added to the model after this build. Only 2 and 3 reach this
+     branch from the table; an unrecognised code now falls back to the generic
+     sentence the function already uses when it has nothing better to say. */
   const base = {
     sun:   day ? 'Clear skies with plenty of sunshine.' : 'Clear and calm tonight — good stargazing.',
-    cloud: code === 3 ? 'Overcast and grey, with little direct sun.' : 'Partly cloudy with a few sunny spells.',
+    cloud: code === 3 ? 'Overcast and grey, with little direct sun.'
+         : code === 2 ? 'Partly cloudy with a few sunny spells.'
+         : 'Mixed conditions.',
     fog:   'Fog and low cloud are cutting visibility.',
     rain:  code >= 80 ? 'Showers passing through, heavy at times.'
          : code >= 63 ? 'Steady rain through the day.' : 'Light rain on and off.',

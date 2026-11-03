@@ -732,6 +732,54 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   every `nav()`, which forces a layout. It runs on city changes and panel opens
   only, not per frame.
 
+## [1.4.1] — 2026-11-04
+
+### Fixed
+- **An unrecognised weather code was described as "Partly cloudy with a few
+  sunny spells" while the rest of the screen said cloudy.** The summary card
+  picked its cloudy sentence with a two-way test — `code === 3 ? overcast :
+  partly cloudy` — so every code that was not exactly 3 fell into the "partly
+  cloudy" arm. Only 2 and 3 reach that arm from the WMO table, but an
+  unrecognised code does too, and 1.3.2 had already made the hero ("Cloudy"),
+  the sky (`bg-*-cloud`) and the icons (☁️) agree with each other for such a
+  code: the summary card was the one place left contradicting them, and at
+  night it promised sunny spells after dark. The sentence is now chosen from the
+  code itself — overcast for 3, partly cloudy for 2 — and anything else falls
+  back to the generic "Mixed conditions." the function already uses when it has
+  nothing better to say.
+
+### Notes
+- No visual change for any real forecast: all 28 documented WMO codes, day and
+  night (56 states, fixed payload), render a byte-identical `#main` before and
+  after — same markup hash — checked in headless Chromium by calling the app's
+  own `render()` against each payload. For codes 4, 68, 69, 100, 200 and 300 the
+  summary now reads "Mixed conditions." beside the hero's "Cloudy", the cloudy
+  sky and the ☁️ icons, where it previously read "Partly cloudy with a few sunny
+  spells."
+- Zero console errors in a full headless load (intercepted forecast response):
+  initial paint, °C/°F toggle, search sheet open and close, settings panel open,
+  a blur slider dragged and released, Escape to close — and `node --check` clean
+  on the extracted script.
+- `versionCode 20` / `versionName 1.4.1` in `AndroidManifest.xml` and
+  `build.sh`, same signing key (certificate SHA-256 `2035d69f…9e3b8b`).
+  `android/assets/index.html` is byte-identical to `web/index.html`, the APK
+  built from this tree bundles that same file byte for byte (`cmp`), reports
+  20 / 1.4.1, and its digest is the one in `CHECKSUMS.txt`.
+- Left alone deliberately, because the only fix is visible wording: code 2 at
+  night still reads "Partly cloudy with a few sunny spells"; 63 to 67 at night
+  still say "Steady rain through the day"; code 80 ("Light showers") still says
+  "heavy at times", and 77 (snow grains) and 85 (snow showers) still say "Heavy
+  snow falling and settling" because the snow sentence is chosen with
+  `code >= 75`.
+- Left alone deliberately, because icon choices are frozen: 85 and 86 draw 🌨️ at
+  night where 71 to 77 draw ❄️, and the 7-day rows always use the daytime glyph
+  (the daily block carries no `is_day`).
+- Left alone deliberately: `usableForecast()` still does not check that the
+  hourly `weather_code` / `is_day` arrays are as long as `hourly.time`, so a
+  truncated payload paints ☁️ and "NaN°" past the point where the arrays stop.
+  That is a payload-validation gap (network area), not a code-coverage one, and
+  it is noted for that pass.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
