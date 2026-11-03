@@ -780,6 +780,64 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   That is a payload-validation gap (network area), not a code-coverage one, and
   it is noted for that pass.
 
+## [1.4.2] — 2026-11-04
+
+### Fixed
+- **The app kept working in the background after you left it.** The activity
+  never told its WebView that it had been paused: `MainActivity` had no
+  `onPause()`/`onResume()`, so `WebView.onPause()` — the documented call that
+  pauses layout, parsing and JavaScript timers for a WebView that is not
+  visible — was never made. Everything the page keeps running therefore kept
+  running while the app sat in the background: the 60-second forecast re-check
+  (`setInterval(autoRefresh, 60 * 1000)`), the WebView's layout and parsing
+  work, and the compositor animations (drifting clouds, the pulsing sun, the
+  shimmer on a loading card) went on waking the device for as long as the
+  activity was stopped instead of only while it was on screen. The two
+  overrides now bracket the activity's life and hand the pause to the WebView;
+  `onResume()` restores the timers, and the page's own `visibilitychange`
+  handling starts the particle loop again exactly as it did before.
+- **The WebView was destroyed while it was still attached to the window.**
+  `onDestroy()` called `web.loadUrl("about:blank")` and then `web.destroy()` on
+  a WebView that was still the activity's content view, which the platform
+  documents as unsupported (it logs *"WebView.destroy() called while still
+  attached"* and leaves the compositor and the native `AwContents` tied to a
+  window that is being torn down), and it started a fresh navigation on a
+  WebView that was one line away from being destroyed. Teardown now removes the
+  view from its parent, stops the load in flight, then destroys, and drops the
+  reference.
+- **A location prompt left open when the activity went away held its callback.**
+  `geoCallback` (and with it the WebView) stayed referenced until the activity
+  was collected, and the page's `getCurrentPosition()` was never answered.
+  `onDestroy()` now hands the callback back as a refusal — the same answer a
+  denied prompt gives, which the page already handles by falling back to a
+  city — and clears it.
+
+### Notes
+- Nothing visible changes: no layout, colour, wording, timing or feature is
+  touched, and `web/index.html` is not modified by this entry.
+- `versionCode 21` / `versionName 1.4.2` in `AndroidManifest.xml` and
+  `build.sh` (up from 20 / 1.4.1), same signing key — certificate SHA-256
+  `2035d69f…9e3b8b`, unchanged. `android/assets/index.html` is still
+  byte-identical to `web/index.html`, the APK built from this tree bundles that
+  same file byte for byte (`cmp` on the extracted asset), reports 21 / 1.4.2,
+  and its digest is the one in `CHECKSUMS.txt`.
+- Verified: `javac`/`d8` clean, `apksigner verify` green with the same
+  certificate, and the shipped `classes.dex` disassembles to the intended
+  bodies — `MainActivity.onPause` → `WebView.onPause`, `onResume` →
+  `WebView.onResume`, and `onDestroy` in the order
+  `GeolocationPermissions$Callback.invoke` → `getParent` → `removeView` →
+  `stopLoading` → `destroy` → `super.onDestroy`.
+- Left alone deliberately: a second location prompt raised while the first is
+  still open overwrites `geoCallback`, so the first request goes unanswered
+  until the page's own 15-second watchdog settles it. It needs a double tap on
+  "Use my current location" and the watchdog already covers it, so it was noted
+  rather than changed.
+- Left alone deliberately: the web app's memory and lifecycle path itself was
+  re-audited (listeners, timers, canvas backing store, visibility transitions)
+  and found clean — 31 event listeners and 222 DOM nodes before and after 25
+  search-sheet/settings cycles and 200 re-renders, no `requestAnimationFrame`
+  callbacks while hidden, no canvas reallocation on a no-op resize.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

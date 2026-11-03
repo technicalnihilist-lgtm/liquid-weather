@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.webkit.GeolocationPermissions;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -131,11 +132,51 @@ public class MainActivity extends Activity {
         else super.onBackPressed();
     }
 
+    /* The activity never told the WebView it had gone away, so everything the
+       page keeps running kept running: the 60-second forecast re-check, the
+       layout and parsing work, and the compositor animations (drifting clouds,
+       the pulsing sun, the shimmer on a loading card) carried on for as long as
+       the activity was stopped instead of on screen. WebView.onPause() and
+       onResume() are the documented pair for that, and they are the only signal
+       the page gets: with them the renderer idles in the background and picks
+       straight up where it was on return. Nothing on screen changes — the
+       activity is invisible while paused, and onResume() restores the timers
+       and the page's own visibility handling runs exactly as before. */
+    @Override
+    protected void onPause() {
+        if (web != null) web.onPause();
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (web != null) web.onResume();
+    }
+
     @Override
     protected void onDestroy() {
         if (web != null) {
-            web.loadUrl("about:blank");
+            /* A location prompt that was still up when the activity went away
+               leaves its callback stored here and the page's geolocation call
+               unanswered: the callback (and through it the WebView) is held
+               until the activity is collected. Hand it back as a refusal — the
+               same answer a denied prompt gives — and drop it. */
+            if (geoCallback != null) {
+                geoCallback.invoke(geoOrigin, false, false);
+                geoCallback = null;
+                geoOrigin = null;
+            }
+            /* destroy() is only safe once the WebView is out of the view tree:
+               called while it is still attached, the compositor and the native
+               AwContents stay tied to a window that is being torn down, and the
+               platform logs 'WebView.destroy() called while still attached'.
+               Detach first, stop the load that was in flight, then destroy. */
+            ViewParent parent = web.getParent();
+            if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(web);
+            web.stopLoading();
             web.destroy();
+            web = null;
         }
         super.onDestroy();
     }
