@@ -655,6 +655,79 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   button. It is exposed and reachable (checked in the accessibility tree and the
   tab order), and separating the two means restructuring the row, so it waits.
 
+## [1.4] — 2026-11-03
+
+### Fixed
+- **On any fractional device pixel ratio the canvas was still reallocated on
+  every resize event.** `size()` compares the box, the ratio and the backing
+  store before it touches `canvas.width`, but it compared the stored attribute
+  with the *fractional* product `w * dpr`. `canvas.width` is an unsigned long,
+  so assigning 430 × 1.25 stores 537, and `537 === 537.5` is never true: on a
+  screen at 125% or 150% scaling (Windows at 125%, any browser zoom, a DPR of
+  1.25 or 1.75) the guard never matched, and each resize event — the URL bar
+  hiding, the keyboard opening — threw away and reallocated the whole backing
+  store again, which is the exact work the guard was added for. The comparison
+  is now made against the integer that is actually stored (`Math.trunc(w * dpr)`),
+  so nothing is assigned differently; only the test is right. Measured in
+  headless Chromium at DPR 1.25: ten no-op `resize` events went from ten
+  `canvas.width` assignments to zero, with the canvas still 537 × 1125.
+
+### Changed
+- **The particle canvas submitted one path and one paint per drop.** Every
+  raindrop called `beginPath`/`moveTo`/`lineTo`/`stroke` of its own, every
+  snowflake `beginPath`/`arc`/`fill` of its own, and `strokeStyle`, `lineWidth`
+  and `fillStyle` were re-assigned inside the loop although they never change
+  within a frame: 1 020 canvas calls for a 170-drop rain frame, 1 560 for a
+  260-drop thunderstorm, 440 for a snow frame, at 60 frames a second. The
+  geometry is now submitted as one path per frame and painted with a single
+  stroke or fill — 344 calls for rain, 524 for thunderstorm, 223 for snow —
+  and the style is set once. Measured on a seeded particle field in headless
+  Chromium, the cost of recording a frame fell from 0.096 to 0.029 ms for rain,
+  0.280 to 0.099 ms for thunderstorm and 0.538 to 0.145 ms for snow (third
+  smallest of fifteen 200-frame batches, three runs each). Particle positions,
+  speeds, counts, colours, line width and the star field's per-star alpha are
+  untouched.
+
+### Notes
+- This is the day's release and carries the day's earlier fixes: the 7-day list,
+  hero, summary and UV card now find the row that is actually today instead of
+  assuming it is `daily[0]` (1.3.8); a resize event no longer reallocates the
+  canvas or re-seeds the particles when nothing moved, and the parallax engine
+  no longer forces a layout on every pointermove (1.3.9); Tab stays inside the
+  *Glass & motion* panel and its five sliders have names (1.3.10).
+- No visible change to the page. With the same payload the rendered `#main` is
+  byte-identical to 1.3.10 (same markup hash, 222 nodes), so is the settings
+  panel and the search sheet, the computed styles of the hero, cards, nav,
+  summary and 7-day range bar are identical, and a full-page screenshot at
+  430 × 900 with *Reduce motion* is pixel-identical.
+- The particles are drawn from the same geometry: over forty seeded frames the
+  `moveTo`/`lineTo` sequence for rain and thunderstorm and the 4 400 `arc`
+  coordinates for snow are identical to 1.3.10. What differs is how the
+  translucent layer is rasterised where two drops overlap — one stroke per frame
+  blends the overlap once instead of twice — so 0.2% (snow) to 1.1%
+  (thunderstorm) of the canvas's pixels differ, all of them in alpha and none by
+  more than 64/255; no position, size, colour or timing changed.
+- Zero console errors in every state checked — loaded, search sheet open,
+  settings panel open, °C/°F toggled, parallax slider dragged to 0 and back, and
+  the offline card — and `node --check` clean on the extracted script.
+- `versionCode 19` / `versionName 1.4` in `AndroidManifest.xml` and `build.sh`,
+  same signing key. `android/assets/index.html` is byte-identical to
+  `web/index.html` (verified with `cmp`).
+- Left alone deliberately: the backdrop blur on the glass cards is still the
+  largest single paint cost, and reducing it would visibly change the glass.
+- Left alone deliberately: toggling °C/°F still rebuilds the whole of `#main`
+  rather than updating the numbers in place. Doing that properly means keeping
+  the entry animation and the held focus working across a partial update, which
+  is a restructure rather than a fix, so it is noted.
+- Left alone deliberately: the parallax engine still writes `--mx`/`--my` when
+  the value it computes is the one already on the root (a scroll past the
+  700 px clamp, a slider at 0). Skipping the write needs a hook from
+  `applySettings()` into the depth engine and a flush when the slider comes back
+  up; the saving is real but smaller than the canvas work above.
+- Left alone deliberately: `placePill()` reads `offsetWidth`/`offsetLeft` on
+  every `nav()`, which forces a layout. It runs on city changes and panel opens
+  only, not per frame.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

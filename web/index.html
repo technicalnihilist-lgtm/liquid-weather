@@ -393,9 +393,17 @@ function size() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = Math.max(1, Math.round(r.width));
   const h = Math.max(1, Math.round(r.height));
-  if (w === W && h === H && dpr === DPR && cv.width === w * dpr && cv.height === h * dpr) return;
+  /* canvas.width/height are unsigned longs, so the assignment below truncates:
+     a 430px box at a device pixel ratio of 1.25 asks for 537.5 and the canvas
+     keeps 537. Comparing the attribute with the fractional product never
+     matched on any fractional ratio (Windows at 125% or 150% scaling, and any
+     browser zoom), so every resize event reallocated the whole backing store —
+     the exact work the guard above is there to avoid. Compare against the
+     integer that is actually stored. */
+  const bw = Math.trunc(w * dpr), bh = Math.trunc(h * dpr);
+  if (w === W && h === H && dpr === DPR && cv.width === bw && cv.height === bh) return;
   DPR = dpr; W = w; H = h;
-  cv.width = W * DPR; cv.height = H * DPR;
+  cv.width = bw; cv.height = bh;
   cx.setTransform(DPR, 0, 0, DPR, 0, 0);
   seed();
 }
@@ -430,22 +438,42 @@ const pageHidden = () => document.visibilityState === 'hidden';
 function tick() {
   fxRaf = 0;
   if (P.length || needClear) { cx.clearRect(0, 0, W, H); needClear = false; }
-  if (!still) for (const p of P) {
+  /* Each drop used to be its own beginPath/moveTo/lineTo/stroke, and each flake
+     its own beginPath/arc/fill, with strokeStyle, lineWidth and fillStyle
+     re-assigned inside the loop — 1 020 canvas calls for a 170-drop rain frame
+     and 1 560 for a 260-drop thunderstorm, every frame. The geometry is
+     identical; it is submitted as one path per frame and painted with one
+     stroke/fill, so a rain frame costs 344 calls instead of 1 020 (measured in
+     headless Chromium, same seeded field). Positions, speeds, counts, colours
+     and line widths are untouched; stars keep a per-star fill because their
+     alpha differs. */
+  if (!still) {
     if (mode === 'rain' || mode === 'storm') {
-      const sp = (mode === 'storm' ? 22 : 15) + p.v * 8;
+      const base = mode === 'storm' ? 22 : 15;
       cx.strokeStyle = 'rgba(200,220,255,.5)'; cx.lineWidth = 1.2;
-      cx.beginPath(); cx.moveTo(p.x, p.y); cx.lineTo(p.x - 3, p.y + 14 + p.v * 8); cx.stroke();
-      p.y += sp; p.x -= 1.5;
-      if (p.y > H) { p.y = -20; p.x = Math.random() * W; }
+      cx.beginPath();
+      for (const p of P) {
+        cx.moveTo(p.x, p.y); cx.lineTo(p.x - 3, p.y + 14 + p.v * 8);
+        p.y += base + p.v * 8; p.x -= 1.5;
+        if (p.y > H) { p.y = -20; p.x = Math.random() * W; }
+      }
+      cx.stroke();
     } else if (mode === 'snow') {
       cx.fillStyle = 'rgba(255,255,255,.9)';
-      cx.beginPath(); cx.arc(p.x, p.y, p.r + 1, 0, 7); cx.fill();
-      p.y += .8 + p.v * 1.6; p.x += Math.sin(p.y / 30 + p.v * 6) * .6;
-      if (p.y > H) { p.y = -6; p.x = Math.random() * W; }
+      cx.beginPath();
+      for (const p of P) {
+        const r = p.r + 1;
+        cx.moveTo(p.x + r, p.y); cx.arc(p.x, p.y, r, 0, 7);
+        p.y += .8 + p.v * 1.6; p.x += Math.sin(p.y / 30 + p.v * 6) * .6;
+        if (p.y > H) { p.y = -6; p.x = Math.random() * W; }
+      }
+      cx.fill();
     } else if (mode === 'stars') {
-      p.v += .02;
-      cx.fillStyle = `rgba(255,255,255,${.35 + Math.abs(Math.sin(p.v + p.x)) * .65})`;
-      cx.fillRect(p.x, p.y * .6, p.r, p.r);
+      for (const p of P) {
+        p.v += .02;
+        cx.fillStyle = `rgba(255,255,255,${.35 + Math.abs(Math.sin(p.v + p.x)) * .65})`;
+        cx.fillRect(p.x, p.y * .6, p.r, p.r);
+      }
     }
   }
   if (!still && P.length) fxRaf = requestAnimationFrame(tick);
