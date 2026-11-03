@@ -601,6 +601,60 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   up); it is a real saving but only at one slider position, so it is noted rather
   than rushed.
 
+## [1.3.10] — 2026-11-03
+
+### Fixed
+- **Tab walked out of the *Glass & motion* panel into the page behind the
+  scrim.** The panel floats above a scrim that covers the page, and the scrim
+  stops the pointer, but the page itself stayed in the tab order: from *Reset to
+  default* the next Tab left the panel and landed on the city button, the °C/°F
+  toggle and the hourly strip, all of them dimmed behind the scrim and none of
+  them visible where the focus ring was. Measured in headless Chromium, ten Tab
+  presses with the panel open reached three controls inside `#main`. `#main` is
+  now `inert` while the panel is open and comes back to the tab order when it
+  closes — the treatment the search sheet already had — so the same ten presses
+  now reach nothing behind it (the nav stays live, because it sits above the
+  scrim and is how you leave the panel).
+- **Every slider in the panel was announced with no name at all.** Each one is
+  wrapped in `<label class="rowr">`, but `<output>` is a labelable element and
+  sits before the range inside that label, so the label bound itself to the
+  output: `input.labels.length` was 0 for all five ranges, and the accessibility
+  tree showed five sliders named "" at 50, 50, 70, 60 and 55. A screen-reader
+  user could not tell Transparency from Parallax, Depth from Blur. Each range
+  now carries an `aria-label` matching the label printed beside it, so the tree
+  reads Transparency, Blur, Bounce, Depth and Parallax; the `<output>` keeps its
+  own association, so the live percentage is unchanged.
+
+### Notes
+- No visual change: with the same payload and a fixed random seed, the rendered
+  page and the open panel are **pixel-identical** to 1.3.9 (430×900 at DPR 2,
+  `prefers-reduced-motion` so nothing is mid-animation), `#main`'s markup is
+  byte-identical, and `#set`'s markup differs only by the five new `aria-label`
+  attributes. Computed styles of the hero, cards, nav, panel and sliders are
+  unchanged.
+- Zero console errors in every state checked — loaded, search sheet open,
+  settings panel open, offline card, offline retry by Enter, a typed search —
+  and `node --check` clean on the extracted script.
+- `versionCode 18` / `versionName 1.3.10` in `AndroidManifest.xml` and
+  `build.sh`, same signing key. `android/assets/index.html` is byte-identical to
+  `web/index.html` (verified with `cmp`). The APK artifact was **not** rebuilt by
+  this pass — the maintenance run had no Android SDK or JDK available — so the
+  published `LiquidWeather.apk` and `CHECKSUMS.txt` are unchanged and still match
+  each other; CI builds 18/1.3.10 from these sources on push.
+- Left alone deliberately: the 7-day rows read "Today ⛅ 22° 32°" with nothing to
+  say which figure is the low and which the high. Naming them needs a role (an
+  `aria-label` on a bare `<div>` is not exposed) and that changes the structure
+  the rows are announced in, so it is noted for a pass that can decide the
+  markup rather than rushed here.
+- Left alone deliberately: white text at `--tx2` (72% opacity) over the light
+  end of the *Snow* and *Clear* day gradients is the weakest contrast in the app,
+  and the white focus ring is hard to see over those same scenes. Any fix
+  changes colours or the ring, which this programme forbids.
+- Left alone deliberately: the ✕ in a search row is a `role="button"` span
+  nested inside the row's `<button>`, which is interactive content inside a
+  button. It is exposed and reachable (checked in the accessibility tree and the
+  tab order), and separating the two means restructuring the row, so it waits.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

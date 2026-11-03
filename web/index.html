@@ -215,11 +215,14 @@ nav{transform:translate3d(calc(var(--mx)*var(--pr)*var(--dp)*-9px),calc(var(--my
   <div id="scrim"></div>
   <div id="set" class="glass" role="dialog" aria-label="Glass and motion settings" aria-hidden="true" inert>
     <div class="set-h"><span>Glass &amp; motion</span><button class="u glass" id="setDone">Done</button></div>
-    <label class="rowr"><span>Transparency</span><output id="o_tr"></output><input type="range" id="r_tr" min="0" max="100"><small>Higher = clearer glass</small></label>
-    <label class="rowr"><span>Blur</span><output id="o_bl"></output><input type="range" id="r_bl" min="0" max="100"></label>
-    <label class="rowr"><span>Bounce</span><output id="o_bo"></output><input type="range" id="r_bo" min="0" max="100"><small>0 = smooth, 100 = very bouncy</small></label>
-    <label class="rowr"><span>Depth</span><output id="o_dp"></output><input type="range" id="r_dp" min="0" max="100"><small>3D separation between sky, clouds, cards and nav</small></label>
-    <label class="rowr"><span>Parallax</span><output id="o_pr"></output><input type="range" id="r_pr" min="0" max="100"><small>Follows tilt, finger and scroll — 0 turns it off</small></label>
+    <!-- aria-label on each slider: <output> is a labelable element and sits
+         before the range inside this wrapping <label>, so the label binds to the
+         output and every slider was announced with no name at all. -->
+    <label class="rowr"><span>Transparency</span><output id="o_tr"></output><input type="range" id="r_tr" min="0" max="100" aria-label="Transparency"><small>Higher = clearer glass</small></label>
+    <label class="rowr"><span>Blur</span><output id="o_bl"></output><input type="range" id="r_bl" min="0" max="100" aria-label="Blur"></label>
+    <label class="rowr"><span>Bounce</span><output id="o_bo"></output><input type="range" id="r_bo" min="0" max="100" aria-label="Bounce"><small>0 = smooth, 100 = very bouncy</small></label>
+    <label class="rowr"><span>Depth</span><output id="o_dp"></output><input type="range" id="r_dp" min="0" max="100" aria-label="Depth"><small>3D separation between sky, clouds, cards and nav</small></label>
+    <label class="rowr"><span>Parallax</span><output id="o_pr"></output><input type="range" id="r_pr" min="0" max="100" aria-label="Parallax"><small>Follows tilt, finger and scroll — 0 turns it off</small></label>
     <button class="sh-loc" id="setReset">Reset to default</button>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
@@ -1601,6 +1604,12 @@ function openSettings() {
   setEl.removeAttribute('inert');
   setEl.classList.add('open'); scrim.classList.add('open');
   setEl.setAttribute('aria-hidden', 'false');
+  /* The panel sits above a scrim that covers the page, but the page stayed in
+     the tab order: Tab from "Reset to default" walked into the city button, the
+     °C/°F toggle and the hourly strip behind the dimmed scrim, where they could
+     be pressed but not seen. Same treatment the search sheet gets. */
+  const mEl = $('#main');
+  if (mEl) mEl.setAttribute('inert', '');
   const first = $('#r_tr');                       // land inside the panel, not behind it
   if (first) { try { first.focus({ preventScroll: true }); } catch (e) {} }
 }
@@ -1609,6 +1618,8 @@ function closeSettings() {
   setEl.classList.remove('open'); scrim.classList.remove('open');
   setEl.setAttribute('aria-hidden', 'true');
   setEl.setAttribute('inert', '');
+  const mEl = $('#main');                          // give the page back to the tab order
+  if (mEl && !sheet.classList.contains('open')) mEl.removeAttribute('inert');
   const back = setReturnFocus && document.contains(setReturnFocus) && !setReturnFocus.closest('#set')
     ? setReturnFocus : navItems.querySelector('button[data-tab="home"]');
   setReturnFocus = null;
