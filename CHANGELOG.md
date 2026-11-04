@@ -952,6 +952,67 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   forecast is fetched for; the label is a state name, and renaming it is frozen
   wording.
 
+## [1.5] — 2026-11-04
+
+### Fixed
+- **Reduce motion was read once at launch, so a device that changed the setting
+  kept the answer it gave on the first run.** The particle field is the one
+  animation CSS cannot switch off — clouds, the sun, spinners, skeletons and
+  the entry animations all follow `prefers-reduced-motion` through their own
+  media queries — so the frame loop consults the setting itself. It consulted
+  it exactly once, at load. Turn “Remove animations” on while the app was in
+  the background and rain, snow and stars went on falling for the rest of the
+  session; turn it off and the particles never came back, because the loop had
+  already stopped and only a scene change or a return from the background could
+  start it again. The media query is watched now: switching it on clears the
+  field with one last frame — the same blank canvas a launch with the setting on
+  shows, rather than a frozen frame of rain — and switching it off starts the
+  loop again.
+- **A place the device had been located in left a failure marker behind for the
+  rest of the session.** When a fix lands, the pinned row is re-keyed by its
+  coordinates and the forecast cached under the old key is dropped
+  (`delete cache[wasId]`). The `preFail` map — which remembers a pre-fetch that
+  failed, so the next render skips a second 12-second deadline — was keyed the
+  same way and never pruned, so every location whose forecast failed to
+  download added one entry that nothing removed. It is pruned with the cache
+  now.
+
+### Notes
+- Nothing visible changes: layout, spacing, colours, typography, gradients,
+  glass values, wording and animation timings are untouched. Both fixes live on
+  a media-query change handler and on the location-failure path; the rendered
+  `#main` for the default (no Reduce motion) path is byte-identical to 1.4.4.
+- Verified in headless Chromium against the 1.4.4 file with the forecast and
+  geocoding APIs stubbed: the loaded, skeleton and offline screens render
+  byte-identical `#main` markup and **0 differences across 680 computed-style
+  checks** (34 elements × 20 properties, sampled after every entry animation had
+  finished), a full interactive pass (unit toggle, search, add city, slider,
+  settings) logs zero console errors, and `node --check` is clean on the
+  extracted script.
+- Targeted checks, each on both files: with the forecast endpoint answering
+  503 and four successive location fixes, `preFail` held five keys on 1.4.4 and
+  holds one (the current fix, matching the pruned cache) on 1.5. Switching
+  `prefers-reduced-motion` on at runtime in a rain scene left the frame loop
+  running at 14 rAF/s on 1.4.4 with the canvas still changing every frame, and
+  stops it at 0 rAF/s on 1.5 with a cleared, static canvas; switching it off
+  again restarts the loop (0 → 6 rAF/s).
+- `versionCode 24` / `versionName 1.5` in `AndroidManifest.xml` and `build.sh`
+  (up from 23 / 1.4.4), same signing key — certificate SHA-256
+  `2035d69f…9e3b8b`, unchanged. `android/assets/index.html` is byte-identical to
+  `web/index.html`.
+- Left alone deliberately: the lightning flash still runs under Reduce motion.
+  It is a Web Animations call, not a CSS animation, so no media query reaches
+  it — but silencing it would visibly change the thunderstorm scene for those
+  users, and the UI is frozen; noted for a future release.
+- Left alone deliberately: the 60-second refresh interval is still armed while
+  the app is in the background (`WebView.onPause()` stops rendering, not JS
+  timers). `WebView.pauseTimers()` would stop it, but it is a process-wide call
+  and there is no way to verify it here without an Android device.
+- Left alone deliberately: a second `onGeolocationPermissionsShowPrompt` still
+  overwrites a pending callback instead of answering the first one. Two prompts
+  cannot overlap in practice — the page asks once at a time — and the page's own
+  15-second watchdog already covers the hang.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
@@ -987,7 +1048,8 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.3.4...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.5...HEAD
+[1.5]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.5
 [1.3.4]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3.4
 [1.3.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3.2
 [1.3.1]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3.1

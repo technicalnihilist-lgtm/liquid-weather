@@ -422,7 +422,15 @@ function seed() {
   needClear = true;
   startFx();
 }
-const still = matchMedia('(prefers-reduced-motion:reduce)').matches;
+/* Reduce motion is watched rather than sampled: it was read once at load, so a
+   device that switched the setting on (or off) while the app was in the
+   background kept the answer it gave at launch. Rain, snow and stars went on
+   animating for a reader who had asked the system for no motion, and a reader
+   who turned the setting off never got the particles back — the loop had
+   stopped and nothing restarted it. Every other animation in the app follows
+   this query through CSS, so the particle field now follows it too. */
+const motionMQ = matchMedia('(prefers-reduced-motion:reduce)');
+let still = motionMQ.matches;
 /* The particle loop re-armed itself unconditionally at the end of every frame, so
    it ran for the whole session even when there was nothing to draw: a clear,
    cloudy or foggy scene seeds no particles at all, yet the app kept waking the
@@ -500,6 +508,23 @@ document.addEventListener('visibilitychange', () => {
     lightning();
   }
 });
+/* Follow the setting itself. Switching it on clears the field with one last
+   frame — the same blank canvas a launch with the setting on shows, rather than
+   a frozen frame of rain — and switching it off starts the loop again. */
+function onMotionChange(e) {
+  still = !!e.matches;
+  if (still) {
+    needClear = true;
+    if (fxRaf) { cancelAnimationFrame(fxRaf); fxRaf = 0; }
+    if (!pageHidden()) fxRaf = requestAnimationFrame(tick);
+  } else {
+    startFx();
+  }
+}
+try {
+  if (motionMQ.addEventListener) motionMQ.addEventListener('change', onMotionChange);
+  else if (motionMQ.addListener) motionMQ.addListener(onMotionChange);
+} catch (e) {}
 
 /* ---------- apply a scene ---------- */
 function scene(cond, isDay) {
@@ -735,7 +760,10 @@ async function locate(silent) {
        the device had ever been in. */
     const wasId = el.id;
     el.id = 'c' + lat.toFixed(3) + ',' + lon.toFixed(3);
-    if (wasId && wasId !== el.id) delete cache[wasId];
+    /* The forecast cache was pruned when the row took a new key; the failure
+       marker beside it was not, so every place the device had ever been located
+       in left one entry behind for the rest of the session. Same rule for both. */
+    if (wasId && wasId !== el.id) { delete cache[wasId]; delete preFail[wasId]; }
     dropTwin(el);                             // never list the same place twice
     /* The forecast is requested now, beside the name lookup rather than behind
        it: a geocoder that hangs must not be able to hold the forecast back.
