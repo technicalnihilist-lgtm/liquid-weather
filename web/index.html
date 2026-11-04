@@ -958,6 +958,11 @@ function renderSkeleton(p) {
     <div class="card glass"><div class="lbl">📅 7-day forecast</div><div class="skel" style="height:220px"></div></div>
   </div>`;
   bindUnit();
+  /* the city name is the app's "change city" control in every other state; in
+     the skeleton it was never wired, so it did nothing while a forecast was
+     being fetched */
+  const openBtn = $('#openSearch');
+  if (openBtn) openBtn.onclick = openSheet;
   $('#main .page').classList.add('enter'); prepEnter();
   applyHeldFocus();
 }
@@ -972,6 +977,11 @@ function renderError(p) {
     <div class="card glass"><div class="sum">Check your internet connection, then tap here to try again.</div></div>
   </div>`;
   bindUnit();
+  /* same control as on the forecast screen: without this the offline screen's
+     city name was dead, so a user with no connection could not search for
+     another city from it (only the Cities tab still worked) */
+  const openBtn = $('#openSearch');
+  if (openBtn) openBtn.onclick = openSheet;
   /* the retry card is the only way back online, so it has to be reachable
      without a pointer: role + tabindex + Enter/Space (no visual change). */
   const retry = $('#main').querySelector('.card');
@@ -1198,7 +1208,7 @@ navEl.onclick = e => {
 
 /* ---------- search sheet ---------- */
 const sheet = $('#sheet'), qEl = $('#q'), listEl = $('#shList');
-let stT;
+let stT, qTimer, qSeq = 0;      // qSeq: every keystroke, open and close invalidates older searches
 function openSheet() {
   tab = 'cities'; nav();
   sheet.classList.add('open');
@@ -1210,6 +1220,7 @@ function openSheet() {
      how you leave it. */
   const mEl = $('#main');
   if (mEl) mEl.setAttribute('inert', '');
+  qSeq++;                     // a search started before the sheet opened must not paint into it
   qEl.value = '';
   paintSheet('');
   listEl.classList.add('stagger');
@@ -1219,6 +1230,7 @@ function openSheet() {
 }
 function closeSheet() {
   clearTimeout(qTimer);        // a pending debounce would fire a search into a closed sheet
+  qSeq++;                      // and a request already in flight must not repaint the sheet later
   if (tab === 'cities') { tab = 'home'; nav(); }
   const hadFocus = sheet.contains(document.activeElement);   // focus would land on <body> once the panel goes inert
   sheet.classList.remove('open');
@@ -1357,8 +1369,6 @@ function paintSheet(q, results) {
   listEl.innerHTML = html;
 }
 
-let qTimer, qSeq = 0;
-
 /* A geocoder can answer 200 with a row that carries no coordinates at all, or
    with them as strings. dedupe() keys every row by pid(), which calls
    toFixed(), so one such row threw inside search() — outside every try — and
@@ -1422,8 +1432,12 @@ async function search(q) {
   try { list = dedupe(await remoteSearch(term)); } catch (e) { list = []; }
   const byCountry = countryMatches(term);               // e.g. "Japan" -> Tokyo, Osaka…
   if (byCountry.length) {
-    const names = new Set(list.map(o => o.name.toLowerCase()));
-    list = [...byCountry.filter(o => !names.has(o.name.toLowerCase())), ...list];
+    /* compared folded, not lowercased: the geocoder answers "İstanbul" (capital
+       dotted İ) for a country query, and lowercasing that gives "i̇stanbul" —
+       with a combining dot — so it never matched the bundled "Istanbul" and the
+       sheet listed the same city twice. */
+    const names = new Set(list.map(o => fold(o.name)));
+    list = [...byCountry.filter(o => !names.has(fold(o.name))), ...list];
   }
   if (!list.length) list = localMatches(term);          // offline / no match fallback
   if (seq !== qSeq) return;                             // a newer keystroke won
