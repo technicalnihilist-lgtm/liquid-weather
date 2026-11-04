@@ -1077,6 +1077,56 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   animation behaviour, not just cost; noted for a release that can re-check it
   on a device.
 
+## [1.5.2] — 2026-11-05
+
+### Fixed
+- **One tab's saved city was thrown away by the other tab.** The saved list lived
+  in local storage but every document kept its own copy in memory and wrote that
+  copy out whole, so the tab that wrote last decided the list: with the app open
+  in two tabs, tab A saved Mumbai, tab B — opened before that — saved Chennai,
+  and Mumbai was gone at the next launch. A write made by another document now
+  arrives as a `storage` event and is adopted through the same validation a cold
+  load uses, so the two copies cannot drift apart. This document's own writes
+  never raise that event, so a single tab behaves exactly as it did. When the
+  adopted list still holds the city on screen nothing is repainted, so the entry
+  animation is not replayed; when the other tab removed the city being viewed,
+  the page moves to the row that took its place.
+- **The saved list had no length limit when it was read back.** Every field of a
+  stored row was validated, but the number of rows was not: a restored or
+  hand-edited `lw_places` of 3,000 rows was accepted whole, and opening the
+  Cities sheet built 3,008 rows and blocked the main thread for 3.4 s. Loading
+  now applies the same ceiling `addPlace()` already enforces — at most one
+  "My Location" row and five saved ones — which nothing reachable through the
+  UI can exceed.
+
+### Notes
+- Nothing visible changes. The rendered `#main`, `#nav` and `#bgs` markup is
+  identical to 1.5.1 and **0 differences across 342 computed-style checks**
+  (19 elements × 18 properties).
+- Verified in headless Chromium with the forecast and geocoding APIs stubbed:
+  `node --check` clean on the extracted script, zero console errors on load.
+- Targeted checks, each on both files. Two tabs, one adding Mumbai and one
+  adding Chennai: storage held `New Delhi, Chennai` on 1.5.1 and
+  `New Delhi, Mumbai, Chennai` on 1.5.2; removing Mumbai in the second tab
+  removed it from the first tab's saved list too, with no resurrection.
+  3,000 stored rows: the sheet built 3,008 rows in 3,373 ms on 1.5.1 and 13 rows
+  in 89 ms on 1.5.2, while a legitimate five-city list still renders all of it
+  (14 rows, unchanged). Corrupt `lw_places`, `lw_cur` and `lw_set` values, an
+  empty array, an object instead of an array and a place at 0°/0° all still
+  boot cleanly.
+- `versionCode 26` / `versionName 1.5.2` in `AndroidManifest.xml` and
+  `build.sh` (up from 25 / 1.5.1), same signing key — certificate SHA-256
+  `2035d69f…9e3b8b`, unchanged. `android/assets/index.html` is byte-identical to
+  `web/index.html` (same SHA-256 inside the built APK).
+- Left alone deliberately: a failed write is still silent. When storage is full
+  or blocked, `LS.set` swallows the error and a city the reader just saved is
+  gone at the next launch; saying so needs a new message on screen, which the
+  frozen UI does not allow — it is queued for a release that can add the words.
+- Left alone deliberately: `lw_set` and `lw_unit` are not synced between tabs
+  either. Two tabs changing different sliders still lose one of the two
+  settings, but applying another tab's settings live would visibly change the
+  glass under the reader, which is a UI change rather than a data fix.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
@@ -1112,7 +1162,8 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.5...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.5.2...HEAD
+[1.5.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.5.2
 [1.5]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.5
 [1.3.4]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3.4
 [1.3.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3.2

@@ -336,15 +336,23 @@ function cleanPlace(p) {
    never fetched and the app showed the "Locating…" skeleton for ever. */
 const hasFix = p => !!p && typeof p.lat === 'number' && typeof p.lon === 'number'
   && isFinite(p.lat) && isFinite(p.lon);
-let places = LS.get('lw_places', null);
-places = Array.isArray(places) ? places.map(cleanPlace).filter(Boolean) : [];
-let sawMyLoc = false;
-places = places.filter(p => {                          // at most one "My Location" row
-  if (!p.myLoc) return true;
-  if (sawMyLoc) return false;
-  sawMyLoc = true; return true;
-});
-if (!places.length) places = [MY_LOC()];
+/* One validated list, at most one "My Location" row and five saved ones — the
+   same ceiling addPlace() enforces. Every other field of a stored row was
+   checked but the length of the list was not, so a restored or hand-edited
+   `lw_places` of three thousand rows was accepted whole: opening the Cities
+   sheet built 3,008 rows and blocked the main thread for 3.6s, and nothing
+   reachable through the UI can produce more than six. */
+function loadPlaces(raw) {
+  const list = Array.isArray(raw) ? raw.map(cleanPlace).filter(Boolean) : [];
+  let pinned = false, saved = 0;
+  const capped = list.filter(p => {
+    if (!p.myLoc) return ++saved <= 5;
+    if (pinned) return false;
+    pinned = true; return true;
+  });
+  return capped.length ? capped : [MY_LOC()];
+}
+let places = loadPlaces(LS.get('lw_places', null));
 let curRaw = toNum(LS.get('lw_cur', 0));
 let cur = isFinite(curRaw) ? Math.floor(curRaw) : 0;
 cur = Math.max(0, Math.min(cur, places.length - 1));   // negative / huge / NaN indexes used to blank the app
@@ -360,6 +368,33 @@ let lastKey = '', dirNext = 1, showSeq = 0, fcCtl = null;
 const mono = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
 
 const savePlaces = () => { LS.set('lw_places', places); LS.set('lw_cur', cur); };
+/* Two documents share one saved list — the app and a browser tab, or two tabs.
+   Each held its own copy in memory and wrote it out whole, so the tab that
+   wrote last decided the list: tab A saved Mumbai, tab B (opened before that)
+   saved Chennai, and Mumbai was gone at the next launch. A write made by
+   another document arrives here as a `storage` event — never for this
+   document's own writes, so a single tab behaves exactly as it did — and is
+   adopted through the same validation a cold load uses, so the copies cannot
+   drift apart and nothing one tab saved is thrown away by the other. */
+addEventListener('storage', e => {
+  if (e.key !== 'lw_places' || e.newValue === null) return;   // a removed key is not a list
+  let raw;
+  try { raw = JSON.parse(e.newValue); } catch (_) { return; }  // not a list we can trust
+  const next = loadPlaces(raw);
+  const keep = places[cur] ? places[cur].id : null;
+  places = next;
+  const at = keep === null ? -1 : places.findIndex(p => p.id === keep);
+  const still = at >= 0;
+  cur = still ? at : Math.max(0, Math.min(cur, places.length - 1));
+  nav();
+  if (sheet.classList.contains('open')) paintSheet(qEl.value);  // saved rows only, results reused
+  /* Repaint the page only when the city on screen is no longer in the list:
+     adopting a list that still holds it must not replay the entry animation. */
+  if (!still) {
+    const p = places[cur];
+    if (!hasFix(p)) { renderSkeleton(p); locate(); } else show(true);
+  }
+});
 
 /* ---------- backgrounds & clouds (built once) ---------- */
 const bgHost = $('#bgs');
