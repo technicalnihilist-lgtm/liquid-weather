@@ -838,6 +838,56 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   search-sheet/settings cycles and 200 re-renders, no `requestAnimationFrame`
   callbacks while hidden, no canvas reallocation on a no-op resize.
 
+## [1.4.3] — 2026-11-04
+
+### Fixed
+- **"Use my current location" could leave the spinner turning for good.** The
+  button in the city sheet repaints the "Loading forecast…" skeleton and then
+  asks the device for a position. When the request came back without one — the
+  permission denied, the 12-second deadline missed, a device with no GPS — the
+  failure path only repainted the screen if the pinned row had *no* coordinates
+  yet (`if (!hasFix(el)) fallbackPlace()`). A row that already carried a fix
+  from an earlier launch therefore kept the skeleton on screen: `--°`, a
+  spinning ring, no forecast, no retry card, nothing to tap. The forecast for
+  the coordinates the row already held is now drawn again, exactly as a
+  successful request would draw it — cached and instant when the cache is
+  warm, the usual offline card when it is not.
+- **A superseded location request could rename the place.** `locate()` guards
+  the coordinates of an older request with a sequence number, but the write
+  that follows the reverse geocoder had no such guard. Tapping "Use my current
+  location" twice — the first fix still being named when the second arrives —
+  let the older request finish last and stamp its own city name over the newer
+  fix: the pinned row, the Cities list and the toast said the place you had
+  just left while the forecast on screen was the one for where you now are.
+  A request that is no longer the newest one now returns before it writes the
+  name, so the newest fix owns the name as well as the coordinates.
+
+### Notes
+- Nothing visible changes: no layout, spacing, colour, typography, gradient,
+  glass value, wording or animation timing is touched. Both changes live on
+  paths that only run when a location request fails or is overtaken.
+- Verified in headless Chromium against the previous file with the network and
+  the geolocation API stubbed: the normal load renders byte-identical `#main`
+  markup and identical computed state, with no console error and no unhandled
+  rejection in either build. The first bug reproduces on the old file
+  (`--°` / "Loading forecast…" / spinner still up 900 ms after a denied
+  request on a row that already had a fix) and is gone on the new one (27° /
+  "Partly cloudy"). The second reproduces as `name: "Pune"` beside
+  `lat: 19.076` — the newer Mumbai coordinates under the older Pune name — and
+  is gone on the new one (`name: "Mumbai"`, `lat: 19.076`).
+- `versionCode 22` / `versionName 1.4.3` in `AndroidManifest.xml` and
+  `build.sh` (up from 21 / 1.4.2), same signing key — certificate SHA-256
+  `2035d69f…9e3b8b`, unchanged. `android/assets/index.html` is byte-identical
+  to `web/index.html`, the APK built from this tree bundles that same file
+  byte for byte, reports 22 / 1.4.3, and its digest is the one in
+  `CHECKSUMS.txt`.
+- Left alone deliberately: `getCurrentPosition` is still called with
+  `maximumAge: 10 * 60 * 1000`, so a fix the platform cached up to ten minutes
+  ago is accepted. That is what makes a second tap feel instant, and changing
+  it would alter how long "Use my current location" takes on every device.
+- Left alone deliberately: the toast wording on both failure paths, which the
+  frozen UI rules cover.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

@@ -747,6 +747,12 @@ async function locate(silent) {
     const fc = prefetchForecast(el, pctl);
     const nmP = reverseName(lat, lon);
     const late = await Promise.race([nmP, new Promise(r => setTimeout(() => r(null), GEO_NAME_WAIT))]);
+    /* The guard above covered the coordinates only. A second "Use my current
+       location" tapped while the first fix was still being named let the older
+       request write its own city name over the newer one — the row then showed
+       the newer coordinates under the name of the place it had left. A
+       superseded request must not write the name either. */
+    if (my !== locSeq) return;
     /* null means the budget ran out: paint with the same coordinate label
        reverseName itself returns when both services fail, and take the real
        name when it turns up. */
@@ -771,11 +777,17 @@ async function locate(silent) {
       toast(isFile
         ? 'Browsers block location for local files. Tap the city name and pick yours — everything else works.'
         : 'Location is blocked. Tap the city name and pick your city — everything works without it.', 6000);
-      if (!hasFix(el)) fallbackPlace();
     } else {
       toast('Could not reach your location. Tap the city name to retry.', 4200);
-      if (!hasFix(el)) fallbackPlace();
     }
+    /* A row that already has a fix is not repainted by a failed request. The
+       "Use my current location" button repaints the "Loading forecast…"
+       skeleton before it asks for a position, so a denial, a timeout or a
+       device with no GPS left that spinner turning for good — with the
+       forecast for the coordinates the row already holds never drawn. Draw it
+       again, the same way a successful request would. */
+    if (!hasFix(el)) fallbackPlace();
+    else if (places.indexOf(el) === cur) show();
   }
 }
 /* The name can arrive after the forecast is already on screen. Repaint the two
