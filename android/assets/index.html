@@ -1589,19 +1589,39 @@ const noMotion = matchMedia('(prefers-reduced-motion:reduce)').matches;
 (function depthEngine() {
   const root = document.documentElement;
   const cl = (v, a, b) => v < a ? a : v > b ? b : v;
-  const P = { px: 0, py: 0, gx: 0, gy: 0, sy: 0, queued: false };
+  const P = { px: 0, py: 0, gx: 0, gy: 0, sy: 0, raf: 0 };
   let baseBeta = null;
+  /* Reduce motion is watched here, not sampled once at load. While it is on the
+     stylesheet forces `transform: none` on every layer this engine drives, so a
+     frame of parallax maths cannot move anything: it can only recalculate the
+     style of the whole document, once per frame, for a value nobody can see.
+     Sampling the query once also made the setting work in one direction only —
+     switched on while the app was open, the engine kept writing every frame;
+     switched off, it had already returned and the parallax never came back. */
+  let on = !motionMQ.matches;
+  let lastX = '', lastY = '';
 
   function flush() {
-    P.queued = false;
-    const x = cl(P.px * .7 + P.gx * .9, -1.3, 1.3);
-    const y = cl(P.py * .7 + P.gy * .9 + P.sy * .35, -1.3, 1.3);
-    root.style.setProperty('--mx', x.toFixed(4));
-    root.style.setProperty('--my', y.toFixed(4));
+    P.raf = 0;
+    if (!on) return;
+    const x = cl(P.px * .7 + P.gx * .9, -1.3, 1.3).toFixed(4);
+    const y = cl(P.py * .7 + P.gy * .9 + P.sy * .35, -1.3, 1.3).toFixed(4);
+    /* A resting finger, a mouse that has stopped, and a page scrolled past the
+       end of its range all produce the same two numbers frame after frame.
+       Writing them again is not free: --mx/--my are inherited custom
+       properties, so every write invalidates the style of the whole document
+       and with it the transforms of the sky, the clouds, the particles, ten
+       glass cards and the nav. Nothing to do when the value is already there. */
+    if (x === lastX && y === lastY) return;
+    lastX = x; lastY = y;
+    root.style.setProperty('--mx', x);
+    root.style.setProperty('--my', y);
   }
-  function queue() { if (!P.queued) { P.queued = true; requestAnimationFrame(flush); } }
+  function queue() { if (on && !P.raf) P.raf = requestAnimationFrame(flush); }
+  function halt() { on = false; if (P.raf) { cancelAnimationFrame(P.raf); P.raf = 0; } }
+  function resume() { if (on) return; on = true; lastX = lastY = ''; startTilt(); queue(); }
 
-  if (noMotion) { root.style.setProperty('--dp', '0'); root.style.setProperty('--pr', '0'); return; }
+  if (!on) { root.style.setProperty('--dp', '0'); root.style.setProperty('--pr', '0'); }
 
   const phone = document.querySelector('.phone');
   /* The pointer handler used to measure the phone's box on every single
@@ -1630,25 +1650,42 @@ const noMotion = matchMedia('(prefers-reduced-motion:reduce)').matches;
     P.gy = cl((e.beta - baseBeta) / 32, -1, 1);
     queue();
   }
-  function listenTilt() { window.addEventListener('deviceorientation', onOrient, true); }
-  if (typeof DeviceOrientationEvent !== 'undefined') {
-    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-      // iOS/Safari: sensor access needs a gesture
-      const ask = async () => {
-        try { if (await DeviceOrientationEvent.requestPermission() === 'granted') listenTilt(); } catch (e) {}
-        document.removeEventListener('pointerdown', ask);
-      };
-      document.addEventListener('pointerdown', ask);
-    } else {
-      listenTilt();
-    }
+  let tiltOn = false, tiltAsked = false;
+  function listenTilt() {
+    if (tiltOn) return;
+    tiltOn = true;
+    window.addEventListener('deviceorientation', onOrient, true);
   }
+  /* iOS/Safari hands over the sensor only after a gesture. Asking for it while
+     reduce motion is on would raise a permission dialog for data the effect is
+     not going to use, so the ask is armed only when the effect is running. */
+  const needsAsk = typeof DeviceOrientationEvent !== 'undefined'
+    && typeof DeviceOrientationEvent.requestPermission === 'function';
+  function startTilt() {
+    if (typeof DeviceOrientationEvent === 'undefined') return;
+    if (!needsAsk) { listenTilt(); return; }
+    if (tiltAsked) return;
+    tiltAsked = true;
+    const ask = async () => {
+      try { if (await DeviceOrientationEvent.requestPermission() === 'granted') listenTilt(); } catch (e) {}
+      document.removeEventListener('pointerdown', ask);
+    };
+    document.addEventListener('pointerdown', ask);
+  }
+  if (on) startTilt();
 
   const mainEl = document.getElementById('main');
   mainEl.addEventListener('scroll', () => {
     P.sy = -cl(mainEl.scrollTop / 700, 0, 1);
     queue();
   }, { passive: true });
+
+  /* Follow the setting itself, both ways, the way the particle field does. */
+  try {
+    const follow = e => { if (e.matches) halt(); else resume(); };
+    if (motionMQ.addEventListener) motionMQ.addEventListener('change', follow);
+    else if (motionMQ.addListener) motionMQ.addListener(follow);
+  } catch (e) {}
 })();
 
 

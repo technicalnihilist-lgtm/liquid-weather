@@ -1013,6 +1013,70 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   cannot overlap in practice — the page asks once at a time — and the page's own
   15-second watchdog already covers the hang.
 
+## [1.5.1] — 2026-11-05
+
+### Fixed
+- **The parallax engine kept recalculating the whole document for a value that
+  had not moved.** `flush()` wrote `--mx` and `--my` on the root element on every
+  animation frame that the pointer, the tilt sensor or the scroll position asked
+  for, whether or not the numbers had changed. A finger resting on the glass, a
+  mouse that has stopped, and a page scrolled past the end of its range (the
+  scroll term is clamped at −1 after 700px) all produce the same two numbers
+  frame after frame. Those are inherited custom properties, so each write
+  invalidates the style of the entire document and with it the transforms of the
+  sky, the clouds, the particle layer, ten glass cards and the nav — for a value
+  that is already on the element. The rounded value is now compared with the one
+  last written and the write is skipped when it matches.
+- **Reduce motion was still read once at load, for the depth engine.** 1.5 made
+  the particle field follow the setting at runtime; the parallax engine was left
+  sampling it at load, in both directions. Switched on while the app was open,
+  the engine went on queueing a frame and writing both custom properties every
+  frame while the stylesheet forces `transform: none` on every layer it drives,
+  so all of that work recalculated styles that could not move anything.
+  Switched off, the engine had already returned at load and the parallax never
+  came back for the rest of the session. It now watches the same media query the
+  particle field watches: a change to `reduce` cancels the pending frame and
+  stops the writes, and a change back to `no-preference` resumes them. The iOS
+  sensor prompt is armed only while the effect is running, so a device with
+  Reduce motion on is not asked for gyroscope data it will not use.
+
+### Notes
+- Nothing visible changes. The rendered `#main`, `#nav` and `#bgs` markup is
+  byte-identical to 1.5 and **0 differences across 342 computed-style checks**
+  (19 elements × 18 properties, sampled once the entry and card transitions had
+  settled); the parallax values themselves are unchanged — four pointer
+  positions (0.1/0.2, 0.9/0.8, 0.5/0.5, 0.25/0.75 of the phone box) give
+  exactly the same `--mx`/`--my` pairs on both files. A launch with Reduce
+  motion already on renders byte-identically too (`#bgs`, `.card` and `#nav`
+  all `transform: none`, `--mx` unset).
+- Verified in headless Chromium against the 1.5 file with the forecast and
+  geocoding APIs stubbed: `node --check` clean on the extracted script, zero
+  console errors on load, after a pointer burst, a scroll burst and a unit
+  toggle.
+- Targeted checks, each on both files. Thirty pointermoves at one fixed
+  coordinate made **60** `--mx`/`--my` writes on 1.5 and **2** on 1.5.1 (the
+  first frame, which has nothing to compare against). Switching
+  `prefers-reduced-motion` on at runtime in a rain scene: `--mx` went on
+  changing (`0.0000` → `0.0033`) and the trace showed 41 style recalculations
+  over 40 pointer frames on 1.5; `--mx` stays `0.0000`, the engine queues no
+  frames and the trace shows 14 on 1.5.1. Switching it off again after a launch
+  with it on left `--mx` empty and `#bgs` at `matrix(1.08,…)` on 1.5; on 1.5.1
+  the engine starts and `#bgs` carries the translate again.
+- `versionCode 25` / `versionName 1.5.1` in `AndroidManifest.xml` and
+  `build.sh` (up from 24 / 1.5), same signing key — certificate SHA-256
+  `2035d69f…9e3b8b`, unchanged. `android/assets/index.html` is byte-identical to
+  `web/index.html`.
+- Left alone deliberately: a drag across the nav still measures all three tab
+  buttons with `getBoundingClientRect()` on every `pointermove`. Caching them
+  would be wrong — the strip scrolls horizontally, so the boxes move — and the
+  reads do not force a layout unless a style write has just landed, which only
+  happens when the nearest tab changes.
+- Left alone deliberately: the nine cloud elements keep their `drift` animation
+  running while their opacity is 0. Pausing them would change the position a
+  cloud reappears at when the scene asks for more clouds, which is a change to
+  animation behaviour, not just cost; noted for a release that can re-check it
+  on a device.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
