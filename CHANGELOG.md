@@ -1189,6 +1189,83 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   the strip, which the frozen UI does not allow; noted for a release that can
   re-check it on a device.
 
+## [1.5.4] — 2026-11-05
+
+### Fixed
+- **"Today" sat on yesterday's row for as long as a forecast from before the
+  city's midnight stayed on screen.** `todayIndex()` reads the date out of the
+  payload's own `current.time`, which is right for the city but stops moving the
+  moment the payload does: a forecast cached at 23:55 is still drawn at 00:05
+  (the cache holds ten minutes), and one whose refresh failed is drawn for as
+  long as the reader leaves it there. The 7-day list kept labelling yesterday
+  "Today", and the hero's `H:`/`L:`, the summary's high and low and the UV card
+  all came from yesterday — measured on a payload carrying
+  `current.time 2026-11-05T23:00` still on screen at 00:05, the list read
+  `Today, Fri, Sat…` with a hero of `H:30° L:20°` and a UV card of 6 when the
+  city's today was Friday, `H:31° L:21°`, UV 7. The payload's clock is now
+  cross-checked against the city's own date, computed from the device's UTC
+  clock plus the payload's `utc_offset_seconds` — the device's *timezone* cannot
+  be used (a New York city read from India at 00:30 is still on the previous
+  day there), but its UTC clock plus the payload's offset is the city's
+  wall-clock date whatever timezone the device is set to. The later date is
+  adopted only if the daily block actually contains it *and* the two clocks
+  agreed on the payload's date when it was fetched, so a fresh payload, a
+  payload without `utc_offset_seconds`, and a device whose clock is a day or a
+  week out all render exactly as they did before.
+- **Time spent asleep did not count as elapsed time, so the forecast could sit
+  on screen for hours.** Every elapsed-time test in the app reads the monotonic
+  clock, which is the right choice for a wall clock that gets corrected — but
+  `performance.now()` does not tick while the device is asleep (Chrome reads
+  `CLOCK_MONOTONIC`, which stops during suspend on Android and Linux). A phone
+  that slept through the night came back looking as if no time had passed: the
+  visibility handler saw "less than ten minutes since the last refresh" and
+  skipped, the sixty-second interval saw the same and skipped again, and the
+  forecast on screen stayed hours old until ten minutes of *awake* time had gone
+  by. The same clock decided whether a cached payload was still fresh, so a city
+  switched to after a sleep reused a payload from before it. Elapsed time is now
+  the larger of the two clocks — the wall clock counts the hours spent asleep,
+  the monotonic one still covers a clock corrected backwards, and both are
+  compared against the same mark, so a single correction can cost at most one
+  extra fetch.
+
+### Notes
+- Nothing visible changes. With a fresh payload the rendered `#main` is
+  byte-identical to 1.5.3 in five scenarios (an Indian city at 18:05, a New York
+  city read from an Indian device at 00:30, a payload with no
+  `utc_offset_seconds`, a payload with no `current.time`, and a device clock six
+  days fast) and **0 differences across 342 computed-style checks** (19 elements
+  × 18 properties, sampled with animation and transition disabled).
+- Verified in headless Chromium with the forecast and geocoders stubbed:
+  `node --check` clean on the extracted script, zero console errors on load, and
+  zero console errors through an interactive pass (°C/°F both ways, the settings
+  panel and the search sheet opened and closed, all three tabs) — every step
+  identical to 1.5.3.
+- Targeted checks, each on both files. A payload carrying
+  `current.time 2026-11-05T23:00` fetched at 23:55 and still on screen at 00:05
+  after a failed refresh: the list goes from `Today, Fri, …` to
+  `Thu, Today, …`, the hero from `H:30° L:20°` to `H:31° L:21°`, the UV card
+  from 6 to 7, and the summary follows. Three hours of simulated sleep (the wall
+  clock moved on, `performance.now()` frozen): returning to the app made **0**
+  forecast requests on 1.5.3 and **1** on 1.5.4, and a plain re-render after the
+  same sleep reused the three-hour-old cache entry on 1.5.3 (0 requests) and
+  re-fetched it on 1.5.4 (1 request). A device clock six days fast changes
+  nothing on either file.
+- `versionCode 28` / `versionName 1.5.4` in `AndroidManifest.xml` and
+  `build.sh` (up from 27 / 1.5.3), same signing key — certificate SHA-256
+  `2035d69f…9e3b8b`, unchanged. `android/assets/index.html` is byte-identical to
+  `web/index.html` and so is the copy inside the rebuilt APK (same SHA-256,
+  `15735cf7…`), and `CHECKSUMS.txt` points at the new build.
+- Left alone deliberately: the hourly strip still opens on the payload's hour
+  when the city has crossed midnight since it was fetched, so the cell marked
+  "Now" can be an hour behind the corrected "Today" row. Moving it would put the
+  strip out of step with the hero's live `current` values on the same screen,
+  and the honest fix is the refresh this pass restores, not a second guess at
+  the hour.
+- Left alone deliberately: a payload older than a day still labels its own first
+  row "Today" once the date has fallen out of the daily block. There is nothing
+  left to compare against at that point, and the refresh above is what stops a
+  payload getting that old in the first place.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

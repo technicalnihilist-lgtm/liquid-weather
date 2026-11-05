@@ -364,8 +364,20 @@ let lastKey = '', dirNext = 1, showSeq = 0, fcCtl = null;
    forecast look fresh for as long as the skew lasted, and stopped the ten-minute
    refresh from firing, so the app sat on one forecast until the clock caught up.
    performance.now() cannot run backwards. The forecast cache lives in memory
-   for this session only, so every timestamp taken here is comparable. */
+   for this session only, so every timestamp taken here is comparable.
+   It is not the whole story, though: the monotonic clock does not tick while
+   the device is asleep (Chrome reads CLOCK_MONOTONIC, which stops during
+   suspend on Android and Linux), so a phone that slept through the night came
+   back looking as if no time had passed at all — the ten-minute refresh saw
+   "less than ten minutes since the last one" and skipped, the interval kept
+   skipping, and the forecast on screen stayed hours old until ten minutes of
+   *awake* time had gone by. Elapsed time is therefore the larger of the two
+   clocks: the wall clock counts the hours spent asleep, the monotonic one
+   still covers a wall clock that is corrected backwards, and both are compared
+   against the same mark, so one correction can cost at most one extra fetch. */
 const mono = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+const aged = (sinceMono, sinceWall, ms) => (mono() - sinceMono >= ms) || (Date.now() - sinceWall >= ms);
+const STALE_MS = 10 * 60 * 1000;
 
 const savePlaces = () => { LS.set('lw_places', places); LS.set('lw_cur', cur); };
 /* Two documents share one saved list — the app and a browser tab, or two tabs.
@@ -707,7 +719,7 @@ const preFail = {};                     // key -> monotonic time of a failed pre
 function prefetchForecast(p, ctl) {
   const key = p.id || (p.lat + ',' + p.lon);
   return loadWeather(p, ctl ? ctl.signal : null).then(w => {
-    w.at = mono();
+    w.at = mono(); w.atWall = Date.now(); w.fetchedDate = cityDate(w);
     cache[key] = w;
     delete preFail[key];
     return true;
@@ -915,13 +927,13 @@ async function show(force) {
   const key = p.id || (p.lat + ',' + p.lon);
   try {
     let w = cache[key];
-    if (!w || force || mono() - w.at > 10 * 60 * 1000) {
+    if (!w || force || aged(w.at, w.atWall, STALE_MS)) {
       if (!w && lastKey) $('#main').classList.add('loading');
       /* a pre-fetch that has just failed means the link is down: go straight to
          the retry card instead of paying for a second full timeout */
       if (!force && preFail[key] && mono() - preFail[key] < 5000) throw new Error('pre-fetch failed');
       w = await loadWeather(p, ctl.signal);
-      w.at = mono();
+      w.at = mono(); w.atWall = Date.now(); w.fetchedDate = cityDate(w);
       cache[key] = w;
     }
     if (my !== showSeq) return;
@@ -973,11 +985,38 @@ function hourIndex(w) {
    case, fresh or stale, so "Today" is matched on the date instead of the
    position. A payload whose block does start today — every payload outside
    that window, and every payload once the API has caught up — resolves to row
-   0 and renders exactly as before. */
+   0 and renders exactly as before.
+   The payload's clock is the reference only until the city's own midnight has
+   gone by with the payload still on screen. A forecast cached at 23:55 is
+   still drawn at 00:05 (the cache holds ten minutes), and one whose refresh
+   failed is drawn for as long as the reader leaves it there: its `current.time`
+   still says yesterday, so row 0 was labelled "Today" over yesterday's weather
+   and the hero's H:/L:, the summary and the UV card all came from yesterday.
+   The device's own timezone cannot be the tie-breaker (a New York city read
+   from India at 00:30 is still on the previous day there), but the payload's
+   own `utc_offset_seconds` applied to the device's UTC clock is the city's
+   wall-clock date whatever timezone the device is set to. Only a date the
+   daily block actually contains is adopted, and only when the two clocks
+   agreed on the payload's date when it was fetched — so a payload that has
+   crossed midnight is corrected, while a device whose clock is wrong by a day
+   (which would disagree with the payload from the start) is not trusted with
+   the answer, and a fresh payload behaves exactly as before. */
+function cityDate(w) {
+  const off = (w && typeof w.utc_offset_seconds === 'number' && isFinite(w.utc_offset_seconds)) ? w.utc_offset_seconds : null;
+  if (off === null) return '';
+  const t = Date.now() + off * 1000;
+  return isFinite(t) ? new Date(t).toISOString().slice(0, 10) : '';
+}
 function todayIndex(w) {
   const now = (w.current && typeof w.current.time === 'string') ? w.current.time.slice(0, 10) : '';
   const times = (w.daily && Array.isArray(w.daily.time)) ? w.daily.time : [];
-  if (!now || !times.length) return 0;
+  if (!times.length) return 0;
+  const c = cityDate(w);
+  if (c && c > now && w.fetchedDate === now) {
+    const j = times.indexOf(c);               // the city has crossed midnight since this payload
+    if (j >= 0) return j;
+  }
+  if (!now) return 0;
   const i = times.indexOf(now);
   return i < 0 ? 0 : i;                       // no row for today (stale payload): leave it at the first
 }
@@ -1860,11 +1899,11 @@ startFx();
 })();
 
 /* refresh when the tab comes back, and every 10 minutes */
-let lastAuto = mono();
+let lastAuto = mono(), lastAutoWall = Date.now();
 function autoRefresh() {
   if (document.visibilityState !== 'visible') return;
-  if (mono() - lastAuto < 10 * 60 * 1000) return;
-  lastAuto = mono();
+  if (!aged(lastAuto, lastAutoWall, STALE_MS)) return;
+  lastAuto = mono(); lastAutoWall = Date.now();
   const p = places[cur];
   if (hasFix(p)) show(true);
 }
