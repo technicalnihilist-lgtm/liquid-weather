@@ -395,6 +395,7 @@ addEventListener('storage', e => {
   const next = loadPlaces(raw);
   const keep = places[cur] ? places[cur].id : null;
   places = next;
+  pruneCache();                                 // rows the other tab deleted are not ours to hold
   const at = keep === null ? -1 : places.findIndex(p => p.id === keep);
   const still = at >= 0;
   cur = still ? at : Math.max(0, Math.min(cur, places.length - 1));
@@ -538,6 +539,16 @@ let lt;
 function lightning() {
   clearTimeout(lt);
   if (mode !== 'storm') return;
+  /* The visibility handler below stops this chain when the app goes away, but
+     it can only stop a chain that exists at that moment. A forecast that
+     finishes downloading after the reader has left — the city was tapped and
+     the phone put down — runs scene(), which calls this function again, and
+     the timer was re-armed for a page nobody is looking at: the backgrounded
+     WebView kept waking every few seconds to start a 600ms flash animation on
+     an invisible element, for as long as it stayed in the background, while the
+     particle loop beside it correctly stayed stopped. Nothing to flash while
+     the page is hidden; the handler starts the chain again on return. */
+  if (pageHidden()) return;
   lt = setTimeout(() => {
     const f = $('#flash');
     if (f.animate) f.animate([{ opacity: 0 }, { opacity: .7 }, { opacity: .1 }, { opacity: .55 }, { opacity: 0 }], { duration: 600 });
@@ -716,6 +727,18 @@ async function loadWeather(place, signal) {
    failure is remembered for a few seconds so the render that follows does not
    start a second request and make the user wait out a second 12s deadline. */
 const preFail = {};                     // key -> monotonic time of a failed pre-fetch
+/* Both maps are keyed by the place's id and nothing ever removed an entry, so a
+   city that was added and then deleted left its whole forecast — current,
+   forty-eight hours and seven days, tens of kilobytes each — held in memory for
+   the rest of the session, with no row left that could ever read it again. (The
+   one place that did prune, locate(), does it by hand when a row takes a new
+   key.) The rule is now in one function: an entry survives only while its city
+   is still in the list. */
+function pruneCache() {
+  const keep = new Set(places.map(p => p.id));
+  for (const k of Object.keys(cache)) if (!keep.has(k)) delete cache[k];
+  for (const k of Object.keys(preFail)) if (!keep.has(k)) delete preFail[k];
+}
 function prefetchForecast(p, ctl) {
   const key = p.id || (p.lat + ',' + p.lon);
   return loadWeather(p, ctl ? ctl.signal : null).then(w => {
@@ -1613,6 +1636,7 @@ function removeSaved(i) {
   if (p.myLoc) { toast('My Location stays pinned.'); return; }
   const hadFocus = listEl.contains(document.activeElement);   // repainting the list would drop it to <body>
   places.splice(i, 1);
+  pruneCache();                                 // the deleted city's payload goes with its row
   if (!places.length) places = [{ id: 'loc', name: 'My Location', sub: '', lat: null, lon: null, myLoc: true }];
   if (i < cur) cur--;                           // keep pointing at the same city after a removal
   cur = Math.max(0, Math.min(cur, places.length - 1));

@@ -1266,6 +1266,60 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   left to compare against at that point, and the refresh above is what stops a
   payload getting that old in the first place.
 
+## [1.5.5] — 2026-11-06
+
+### Fixed
+- **The thunderstorm flash kept animating in the background.** The visibility
+  handler stops the lightning chain when the app goes away, but it can only
+  stop a chain that already exists: a forecast that finished downloading after
+  the reader left — a city tapped and the phone put down, which is the ordinary
+  way a fetch outlives the screen — ran `scene()`, which calls `lightning()`,
+  and the timer was armed again for a page nobody was looking at. The
+  backgrounded WebView then woke every 2.5–7.5s to start a 600ms flash
+  animation on an invisible element, for as long as it stayed in the
+  background, while the particle loop beside it correctly stayed stopped.
+  `lightning()` now refuses to arm while the page is hidden, which is exactly
+  the rule the visibility handler was already written to enforce; the handler
+  starts the chain again on return. Measured on a storm city with the forecast
+  landing while hidden: **4 flashes in 16s before, 0 after**, and 2 flashes in
+  the 12s after coming back, as before.
+- **A deleted city's forecast stayed in memory for the rest of the session.**
+  The forecast cache and the pre-fetch failure map are keyed by the place id
+  and nothing removed an entry: removing a city from the Cities sheet dropped
+  the row and left its whole payload — current conditions, forty-eight hours
+  and seven days, tens of kilobytes each — held for as long as the app stayed
+  open, with no row left that could ever read it again. `locate()` already
+  pruned by hand when a row took a new key; the same rule now lives in one
+  `pruneCache()` that both the removal and the other-tab adoption path call.
+  Measured with five cities visited and two of them deleted: the cache went
+  from **5 entries / 14 957 bytes to 3 entries / 8 982 bytes**.
+
+### Notes
+- Nothing visible changes: the rendered `#main` is byte-identical to 1.5.4 and
+  there are **0 differences across 594 computed-style checks** (33 elements × 18
+  properties), the only sampled difference being the phase of the sun's 6s
+  pulse. `node --check` is clean on the extracted script, and a headless load
+  with the forecast stubbed reports zero console errors on both files, as does
+  an interactive pass (°C/°F both ways, the Cities sheet opened, searched and
+  closed, the *Glass & motion* panel with a blur change, all three tabs) with
+  identical results on 1.5.4 and 1.5.5.
+- `versionCode 29` / `versionName 1.5.5` in `AndroidManifest.xml` and
+  `build.sh` (up from 28 / 1.5.4), same signing key — certificate SHA-256
+  `2035d69f…9e3b8b`, unchanged. `android/assets/index.html` is byte-identical to
+  `web/index.html`, and so is the copy inside the rebuilt APK (same SHA-256,
+  `b5f6f79c…`); `CHECKSUMS.txt` points at the new build.
+- Left alone deliberately: the sixty-second refresh interval still ticks while
+  the page is hidden. It returns immediately unless the page is visible, so it
+  costs one no-op wake a minute, and the activity already pauses the WebView
+  (`onPause`); stopping and restarting it on every visibility change would add
+  a second place for the ten-minute staleness rule to go wrong for no real
+  saving.
+- Left alone deliberately: a fetch that is still in flight when its city is
+  deleted writes its payload into the cache after the prune has run, so that one
+  entry survives until the session ends. Cancelling it instead would mean
+  aborting a request the reader may still be waiting for on another tab of the
+  sheet, and it is a single entry, not one per deleted city.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
