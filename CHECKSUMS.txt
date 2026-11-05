@@ -9,4 +9,14 @@ Verify a download before installing:
 Compare the output with the line below. The same digest is shown on the
 release page and by the GitHub API for the release asset.
 
-2ed110395e312b8ab4b910d3b87f18458089569e062fead2ace18ae27ab171c1  LiquidWeather.apk
+861ca9546e9d73219b19aa3532f7f90e8ee697fe3203b3d9bcc088d8b1d2a7e8  LiquidWeather.apk
+
+You can also confirm the APK is signed by this project's key:
+
+  apksigner verify --print-certs LiquidWeather.apk
+  # expected SHA-256 of the signer certificate:
+  # 2035d69f949e12e56728cc83964fb7fa663c40fa45765cb3b880dc08229e3b8b
+  # CN=Liquid Weather, OU=Mobile, O=Liquid Weather, L=Pune, ST=Maharashtra, C=IN
+
+The signing key is included in the repo (android/release.keystore) so builds are
+reproducible; see the note in the README about what that means.
