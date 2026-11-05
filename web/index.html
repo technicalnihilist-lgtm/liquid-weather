@@ -672,10 +672,23 @@ function forecastURL(lat, lon) {
 function usableForecast(w) {
   if (!w || typeof w !== 'object' || !w.current || !w.hourly || !w.daily) return false;
   const c = w.current, h = w.hourly, d = w.daily;
-  return typeof c.temperature_2m === 'number' && typeof c.weather_code === 'number'
-    && typeof c.is_day === 'number'
+  /* Only three of the numbers the renderer prints were checked. Every other
+     field it reads was taken on trust, and a payload that had lost one printed
+     NaN where the reading should be: a body cut before `wind_gusts_10m` gave
+     "gusts NaN" in the wind card, and an hourly block cut short of the current
+     hour gave eight "NaN°" cells in the strip (the hourly arrays were only
+     tested with Array.isArray, never for the length of h.time — the daily
+     block had the length check all along). Every field the cards and the strip
+     index is now required, so a truncated payload is rejected here, before it
+     is cached, and the retry card replaces a screen of NaN. */
+  const num = v => typeof v === 'number' && isFinite(v);
+  return num(c.temperature_2m) && num(c.weather_code) && num(c.is_day)
+    && num(c.relative_humidity_2m) && num(c.apparent_temperature)
+    && num(c.pressure_msl) && num(c.wind_speed_10m) && num(c.wind_gusts_10m)
     && Array.isArray(h.time) && h.time.length > 0
-    && Array.isArray(h.temperature_2m) && Array.isArray(h.weather_code) && Array.isArray(h.is_day)
+    && Array.isArray(h.temperature_2m) && h.temperature_2m.length === h.time.length
+    && Array.isArray(h.weather_code) && h.weather_code.length === h.time.length
+    && Array.isArray(h.is_day) && h.is_day.length === h.time.length
     && Array.isArray(d.time) && d.time.length > 0
     && Array.isArray(d.temperature_2m_max) && d.temperature_2m_max.length === d.time.length
     && Array.isArray(d.temperature_2m_min) && d.temperature_2m_min.length === d.time.length
@@ -1271,7 +1284,7 @@ navEl.onclick = e => {
 
 /* ---------- search sheet ---------- */
 const sheet = $('#sheet'), qEl = $('#q'), listEl = $('#shList');
-let stT, qTimer, qSeq = 0;      // qSeq: every keystroke, open and close invalidates older searches
+let stT, qTimer, qSeq = 0, searchCtl = null;   // qSeq: every keystroke, open and close invalidates older searches
 function openSheet() {
   tab = 'cities'; nav();
   sheet.classList.add('open');
@@ -1294,6 +1307,10 @@ function openSheet() {
 function closeSheet() {
   clearTimeout(qTimer);        // a pending debounce would fire a search into a closed sheet
   qSeq++;                      // and a request already in flight must not repaint the sheet later
+  /* qSeq only stopped a late answer from being *painted*: the download it was
+     waiting for kept running to its 9s deadline, and on to the second
+     geocoder after that. Dropping the request itself is the point. */
+  if (searchCtl) { searchCtl.abort(); searchCtl = null; }
   if (tab === 'cities') { tab = 'home'; nav(); }
   const hadFocus = sheet.contains(document.activeElement);   // focus would land on <body> once the panel goes inert
   sheet.classList.remove('open');
@@ -1442,9 +1459,9 @@ const usableResult = o => !!o && typeof o.name === 'string' && o.name.trim() !==
   && typeof o.lat === 'number' && typeof o.lon === 'number'
   && isFinite(o.lat) && isFinite(o.lon) && Math.abs(o.lat) <= 90 && Math.abs(o.lon) <= 180;
 
-async function remoteSearch(term) {
+async function remoteSearch(term, signal) {
   try {
-    const j = await getJSON('https://geocoding-api.open-meteo.com/v1/search?count=8&language=en&format=json&name=' + encodeURIComponent(term), 9000);
+    const j = await getJSON('https://geocoding-api.open-meteo.com/v1/search?count=8&language=en&format=json&name=' + encodeURIComponent(term), 9000, signal);
     const subOf = r => {
       const bits = [];
       if (r.admin1 && r.admin1 !== r.country) bits.push(r.admin1);
@@ -1459,8 +1476,13 @@ async function remoteSearch(term) {
     })).filter(usableResult);
     if (list.length) return list;
   } catch (e) {}
+  /* An abandoned query must not start the second service. Aborting the first
+     request threw out of the try above and fell straight through to the
+     fallback, which fired a fresh Nominatim request — for a search nobody was
+     waiting for any more. */
+  if (signal && signal.aborted) return [];
   try {
-    const j = await getJSON('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&q=' + encodeURIComponent(term), 9000);
+    const j = await getJSON('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&q=' + encodeURIComponent(term), 9000, signal);
     return (Array.isArray(j) ? j : []).filter(r => r && typeof r === 'object').map(r => {
       const parts = String(r.display_name || '').split(', ');
       return { name: parts[0], sub: parts.slice(1, 3).join(', '), lat: +r.lat, lon: +r.lon };
@@ -1486,13 +1508,23 @@ function countryMatches(term) {
 
 async function search(q) {
   const seq = ++qSeq;
+  /* Every keystroke past the debounce started its own geocoder request and left
+     the previous one running: typing "mumbai" with a pause in it put two
+     requests in flight at once, the free geocoding tier answers a burst with
+     429, and a request for a query the reader had already replaced kept a
+     radio awake for up to 18s (9s per geocoder). The older request is now
+     cancelled, so only the query in the box is being asked about. */
+  if (searchCtl) { searchCtl.abort(); searchCtl = null; }
   const term = q.trim();
   if (term.length < 2) { paintSheet(q, localMatches(term)); return; }
+  const ctl = new AbortController();
+  searchCtl = ctl;
   paintSheet(q, null);                                  // "Searching…"
   /* Belt and braces: whatever a geocoder hands back, the sheet must never be
      left on "Searching…". */
   let list = [];
-  try { list = dedupe(await remoteSearch(term)); } catch (e) { list = []; }
+  try { list = dedupe(await remoteSearch(term, ctl.signal)); } catch (e) { list = []; }
+  if (ctl.signal.aborted) return;                       // superseded or sheet closed: nothing to paint
   const byCountry = countryMatches(term);               // e.g. "Japan" -> Tokyo, Osaka…
   if (byCountry.length) {
     /* compared folded, not lowercased: the geocoder answers "İstanbul" (capital
