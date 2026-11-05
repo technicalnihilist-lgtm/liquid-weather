@@ -1,0 +1,96 @@
+name: Maintenance pass 2026-11-05 16:00 IST
+
+# One-off: the audit sandbox can read this repository but not write to it, so
+# the audited edits for the 2026-11-05 16:00 IST pass (area 1, network & API
+# robustness) are applied, built and committed here. The workflow and its
+# helper scripts delete themselves in the commit they produce.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android platform + build-tools
+        run: |
+          SDKM=$(command -v sdkmanager || echo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager")
+          yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+          "$SDKM" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Apply the audited edits
+        run: python3 .github/maintenance/apply.py
+
+      - name: Syntax check the extracted script
+        run: |
+          python3 - <<'PY'
+          import re
+          s = open('web/index.html', encoding='utf-8').read()
+          m = re.search(r'<script>(.*)</script>', s, re.S)
+          open('/tmp/app.js', 'w', encoding='utf-8').write(m.group(1))
+          PY
+          node --check /tmp/app.js
+
+      - name: Build the signed APK
+        run: |
+          chmod +x android/build.sh
+          ./android/build.sh
+
+      - name: Verify the APK against the source
+        run: |
+          set -e
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          src=$(sha256sum web/index.html | cut -d' ' -f1)
+          asset=$(sha256sum android/assets/index.html | cut -d' ' -f1)
+          bundled=$(unzip -p android/build/LiquidWeather.apk assets/index.html | sha256sum | cut -d' ' -f1)
+          echo "source  $src"
+          echo "asset   $asset"
+          echo "bundled $bundled"
+          [ "$src" = "$asset" ] || { echo "assets copy differs from source"; exit 1; }
+          [ "$src" = "$bundled" ] || { echo "bundled index.html differs from source"; exit 1; }
+          "$BT/aapt2" dump badging android/build/LiquidWeather.apk | grep -E "^package|versionCode"
+          "$BT/aapt2" dump badging android/build/LiquidWeather.apk | grep -q "versionCode='27'" || { echo "versionCode is not 27"; exit 1; }
+          "$BT/aapt2" dump badging android/build/LiquidWeather.apk | grep -q "versionName='1.5.3'" || { echo "versionName is not 1.5.3"; exit 1; }
+          "$BT/apksigner" verify --print-certs android/build/LiquidWeather.apk | grep -q "2035d69f949e12e56728cc83964fb7fa663c40fa45765cb3b880dc08229e3b8b" || { echo "signer certificate changed"; exit 1; }
+          echo "signature verifies with the project key"
+
+      - name: Publish the APK and refresh CHECKSUMS.txt
+        run: |
+          set -e
+          cp android/build/LiquidWeather.apk LiquidWeather.apk
+          python3 - <<'PY'
+          import hashlib, re
+          digest = hashlib.sha256(open('LiquidWeather.apk', 'rb').read()).hexdigest()
+          txt = open('CHECKSUMS.txt', encoding='utf-8').read()
+          new, n = re.subn(r'^[0-9a-f]{64}  LiquidWeather\.apk$', digest + '  LiquidWeather.apk', txt, flags=re.M)
+          assert n == 1, 'checksum line not found once'
+          open('CHECKSUMS.txt', 'w', encoding='utf-8').write(new)
+          print('LiquidWeather.apk', digest)
+          PY
+
+      - name: Commit the pass
+        run: |
+          set -e
+          MSG=$(cat .github/maintenance/message.txt)
+          git rm -q -r .github/maintenance
+          git rm -q .github/workflows/maintenance-pass-2026-11-05-16.yml
+          git rm -q --ignore-unmatch .maintenance-probe
+          git config user.name "Liquid Weather Maintenance"
+          git config user.email "maintenance@liquidweather.local"
+          git add -A
+          git commit -q -m "$MSG"
+          git log --oneline -1
+          git push origin HEAD:main

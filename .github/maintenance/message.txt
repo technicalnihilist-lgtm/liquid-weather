@@ -1,0 +1,35 @@
+fix(network): cancel abandoned geocoder requests, and stop a truncated payload drawing NaN
+
+Search kept a sequence number but not the request: the number could stop an old
+answer from being painted, while the download it was waiting for ran to its 9s
+deadline and then on to the second geocoder. Typing "mum", pausing, then
+finishing "mumbai" left two requests in flight and up to 18s of radio time for
+an answer nobody would see; closing the sheet bumped the number and left the
+request running. Search now owns an AbortController - a new query, a shorter
+one, or a closed sheet cancels the previous request - and an abandoned query no
+longer falls through to the Nominatim fallback, which it did because aborting
+the first request threw out of the try straight into the second service.
+
+usableForecast() checked the three numbers behind the hero and took the rest on
+trust: a body cut before wind_gusts_10m rendered "gusts NaN" in the wind card,
+and an hourly block cut short of the current hour rendered eight "NaN" cells in
+the hourly strip (the hourly arrays were only tested with Array.isArray, never
+for the length of hourly.time, while the daily block had that check all along).
+Every field the cards and the strip index is now required, so a truncated
+payload is rejected before it is cached instead of being drawn.
+
+Verified: node --check clean, zero console errors on load and through a full
+interactive pass, byte-identical #main/#nav markup and 0 differences across 126
+computed-style checks against 1.5.2. "mum"/"mumbai" 700ms apart: 2 requests
+started and 0 cancelled on 1.5.2, 2 started and 1 cancelled on 1.5.3;
+superseded while the first geocoder was still thinking, 4 geocoder requests on
+1.5.2 and 3 on 1.5.3; sheet closed with a search in flight, the request now
+cancels instead of running to its deadline. Body without wind_gusts_10m: "gusts
+NaN" on 1.5.2, none on 1.5.3; hourly block of 8 hours: 8 "NaN" cells on 1.5.2,
+none on 1.5.3; a payload with no hourly block at all behaves as before.
+
+versionCode 27 / versionName 1.5.3, same signing key. Built by this workflow:
+android/assets/index.html and the copy inside the APK both match web/index.html
+byte for byte, and CHECKSUMS.txt carries the new digest.
+
+Landed through CI because the audit sandbox can only read the repository.
