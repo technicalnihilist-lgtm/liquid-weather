@@ -1320,6 +1320,67 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   aborting a request the reader may still be waiting for on another tab of the
   sheet, and it is a single entry, not one per deleted city.
 
+## [1.5.6] — 2026-11-06
+
+### Fixed
+- **A city already in the list could be saved a second time.** Every place is
+  keyed by `pid()`, which rounds its coordinates to three decimals (~110 m), and
+  the search rows tested that key against the stored id. Two providers place the
+  same city on slightly different coordinates — the bundled Mumbai sits at
+  19.076, 72.8777 and the fallback geocoder returns it at 19.0550, 72.8692, 2.5
+  km apart — so a city picked from the bundled list was not recognised when a
+  geocoder answered for it: the result row offered "add" instead of "saved", and
+  tapping it stored the city twice, two of the five slots for one place and two
+  rows of the same name in the Cities sheet. Measured: saving Mumbai from the
+  bundled list and then picking the same city from the geocoder left
+  `New Delhi, Mumbai, Mumbai` in the list on 1.5.5 and leaves `New Delhi,
+  Mumbai` on 1.5.6.
+- **The same city was listed twice inside one set of results.** `dedupe()`
+  compared the rounded keys only, so a geocoder answering with one city under
+  two near-by coordinate sets (a city row and its district row) put two
+  identical rows in the sheet: searching "mumbai" with the geocoder returning
+  19.076, 72.8777 and 19.0550, 72.8692 listed `Mumbai, Mumbai, Chennai` before
+  and `Mumbai, Chennai` now.
+- **The default New Delhi row never matched the bundled Delhi row.** The
+  location fallback stores its row with a four-decimal id
+  (`c28.6139,77.2090`) while every search row is keyed at three, so the two
+  keys could never be equal: with the app showing New Delhi, the Popular list
+  still offered to add Delhi at exactly those coordinates, and taking it stored
+  a second row for the same point. The comparison now recomputes both keys at
+  the same precision, so the Delhi row shows as saved (📍 with its ✕) instead.
+  Both of these are one rule, `samePlace()`: two rows are the same place when
+  their keys match, or when their folded names match and they lie within 25 km
+  of each other — which holds for every bundled city against both geocoders
+  (offsets measured at 0.6–10 km) and keeps same-named cities in different
+  regions apart (Portland OR/ME 4000 km apart, the two Springfields 1100 km
+  apart, both still listed and both still saveable as separate places).
+
+### Notes
+- Nothing visible changes: with a fresh forecast the rendered `#main` is
+  byte-identical to 1.5.5 (3113 characters) and so is the sheet markup for 9 of
+  10 probe queries; the tenth ("india") differs only by the Delhi row's 📍 and
+  its ✕, which is the third fix above. `node --check` is clean on the extracted
+  script and a headless load reports zero console errors on both files, as does
+  an interactive pass (°C/°F both ways, the *Glass* tab with a slider change,
+  the search sheet opened, searched, a city added and removed, all tabs) with
+  identical results on 1.5.5 and 1.5.6.
+- Verified in headless Chromium with the geocoders, the forecast API and the
+  geolocation API stubbed, using the fallback geocoder's real coordinates for
+  Mumbai, Portland, Springfield and Paris.
+- `versionCode 30` / `versionName 1.5.6` in `AndroidManifest.xml` and
+  `build.sh` (up from 29 / 1.5.5), same signing key — certificate SHA-256
+  `2035d69f…9e3b8b`, unchanged. `android/assets/index.html` is byte-identical to
+  `web/index.html`, and so is the copy inside the rebuilt APK (same SHA-256,
+  `32a59ea0…`); `CHECKSUMS.txt` points at the new build.
+- Left alone deliberately: a one-character query still never reaches a
+  geocoder — it is answered from the bundled list only. Sending it would double
+  the requests of an ordinary typing burst and the local list answers it well
+  enough.
+- Left alone deliberately: the bundled country prefix still matches more than
+  the reader may mean — offline, "uk" resolves to Kyiv through "Ukraine" before
+  anything else. Tightening that to country codes would change which results
+  appear for a query, which is a behaviour change rather than a bug fix.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

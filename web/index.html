@@ -1465,13 +1465,35 @@ function localMatches(q) {
   }).slice(0, 8).map(c => ({ name: c[0], sub: c[1], lat: c[2], lon: c[3] }));
 }
 const pid = o => 'c' + o.lat.toFixed(3) + ',' + o.lon.toFixed(3);
+/* Every place is keyed by pid(), which rounds the coordinates to three decimals
+   (~110 m), so a city saved from the bundled list was not recognised when a
+   geocoder answered for it. The bundled Mumbai sits at 19.076, 72.8777 and the
+   same city from the fallback geocoder at 19.0550, 72.8692 — different keys, so
+   the result row offered "add" instead of "saved", tapping it saved Mumbai a
+   second time and the Cities sheet listed it twice, two of the five slots for
+   one place. Two rows are the same place when their keys match, or when their
+   folded names match and they lie within 25 km of each other: that covers every
+   bundled city against both geocoders (Bundled/Nominatim offsets measured at
+   0.6-10 km) while keeping same-named cities in different regions — Portland,
+   two Springfields — apart. */
+const SAME_KM = 25;
+function samePlace(a, b) {
+  if (!hasFix(a) || !hasFix(b)) return false;
+  if (a.id && b.id && a.id === b.id) return true;
+  if (pid(a) === pid(b)) return true;
+  const na = fold(a.name || ''), nb = fold(b.name || '');
+  if (!na || na !== nb) return false;
+  const dLat = (a.lat - b.lat) * 111.32;
+  const dLon = (a.lon - b.lon) * 111.32 * Math.cos((a.lat + b.lat) / 2 * Math.PI / 180);
+  return dLat * dLat + dLon * dLon <= SAME_KM * SAME_KM;
+}
 
 function row(o) {
   /* the ✕ is a real control: it names the place it removes, takes keyboard
      focus, and carries the index of the saved row it belongs to. It used to
      carry data-rm="-1" that nothing read, so it announced "Remove" and did
      nothing at all. */
-  const idx = places.findIndex(p => p.id === pid(o));
+  const idx = places.findIndex(p => samePlace(p, o));
   const right = idx >= 0
     ? `<span class="rm" data-rm="${idx}" role="button" tabindex="0" aria-label="Remove ${esc(o.name)}">✕</span>` : '';
   const isSaved = idx >= 0;
@@ -1553,13 +1575,11 @@ async function remoteSearch(term, signal) {
 }
 
 function dedupe(list) {
-  const seen = new Set();
-  return list.filter(o => {
-    const k = pid(o);
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+  /* Same rule as the saved list: a geocoder that returns one city under two
+     near-by coordinate sets (city and district rows) listed it twice. */
+  const out = [];
+  for (const o of list) if (!out.some(k => samePlace(k, o))) out.push(o);
+  return out;
 }
 
 function countryMatches(term) {
@@ -1610,7 +1630,7 @@ qEl.addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(qTi
 
 function addPlace(o) {
   const id = pid(o), prevCur = cur;
-  const existing = places.findIndex(p => p.id === id);
+  const existing = places.findIndex(p => samePlace(p, o));
   if (existing >= 0) { cur = existing; }
   else {
     const myLocEmpty = places.length === 1 && places[0].myLoc && !places[0].lat;
