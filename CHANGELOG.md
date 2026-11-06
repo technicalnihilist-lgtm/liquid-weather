@@ -1558,6 +1558,72 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Left alone deliberately, as in 1.5.8: the `setInterval(autoRefresh, 60 * 1000)`
   and `getPosition()`'s losing 2.5 s `GEO_NAME_WAIT` timer.
 
+## [1.6] — 2026-11-06
+
+The day's release: the five fixes committed during the day (1.5.5 to 1.5.9) plus
+one more, found on the day's last pass.
+
+### Fixed
+- **Text an input method was still composing was searched.** An Indic, Japanese
+  or Korean keyboard — and Android's own composition — fires an `input` event
+  for every intermediate string it builds, and the search box treated each one
+  as a finished query: composing "मुंबई" put six geocoder requests on the wire,
+  five of them for "मु", "मुं", "मुंब" and the rest of the text nobody had
+  committed yet, each after the same 320 ms debounce. The sheet repainted for
+  every fragment too — with a geocoder that answers nothing, it flashed
+  "No place called “मु”" at the reader while they were still typing — and the
+  burst landed on the free geocoding tiers that answer a burst with 429, which
+  is exactly what the abort-and-supersede logic beside the handler exists to
+  avoid. Enter pressed to commit a candidate searched the unfinished text as
+  well, before the browser had committed it. The box is now quiet while a
+  composition is open (`compositionstart`/`compositionend`, plus `isComposing`
+  on the `input` and `keydown` events) and searches the committed text once,
+  through the same debounce; `openSheet()` and `closeSheet()` clear the flag, so
+  a composition abandoned by closing the sheet cannot leave the box deaf.
+  Nothing changes for a keyboard that commits as it types — every Latin layout,
+  and any autocomplete that replaces the word outright — because `composing`
+  and `isComposing` are both false there.
+
+### Also in this release
+- 1.5.5 — the thunderstorm flash no longer re-arms itself while the app is in
+  the background, and a deleted city's forecast no longer stays in memory.
+- 1.5.6 — one place is recognised as one place: `samePlace()` compares names
+  within 25 km as well as the rounded coordinate key, so a city could no longer
+  be saved twice, listed twice in one set of results, or offered again after
+  the New Delhi fallback.
+- 1.5.7 — the summary card describes night as night, and four weather codes
+  (55/57, 77, 80, 85/86) get the sentence their own WMO entry promises.
+- 1.5.8 — a location fix for a row that had already gone is dropped, and a
+  forecast is never cached under a key no row owns.
+- 1.5.9 — a forecast that outlived the screen that started it can no longer
+  paint over the "Locating…" the reader asked for.
+
+### Notes
+- Verified on both files in headless Chromium with the forecast, geocoding and
+  geolocation APIs stubbed. Targeted check: one composed query issued **6**
+  geocoder requests on 1.5.9 and issues **1** now, for the committed text;
+  ordinary typing ("pun"), Enter ("goa") and the commit itself still issue
+  exactly one request each, and a composition abandoned by closing the sheet
+  leaves the box working (typing "delhi" after reopening searches as before).
+- Nothing visible changes: `#main` markup is byte-identical to 1.5.9 (3115
+  characters), 23 elements × 20 computed properties and 7 sheet probes (Popular
+  plus six queries) are identical, and the only two values that differ —
+  `.cloud` geometry and the sun's pulse phase — differ between two runs of the
+  unchanged file as well, because both are seeded at load.
+- `node --check` is clean on the extracted script; a headless load reports zero
+  console errors, and so does a 400-action random pass (tabs, sliders, sheet,
+  removals, unit toggle, four geocoder behaviours) on both builds.
+- `versionCode 34` / `versionName 1.6` in `AndroidManifest.xml` and `build.sh`
+  (up from 33 / 1.5.9), same signing key — certificate SHA-256
+  `2035d69f…9e3b8b`, unchanged, and the APK verifies against v1, v2 and v3
+  schemes. `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `b5e5e395…`) and so is the copy inside the rebuilt APK.
+  `CHECKSUMS.txt` points at the new build (`16cf4f42…`).
+- Left alone deliberately, as in 1.5.6: a one-character query still never
+  reaches a geocoder, and the bundled country prefix still matches more than
+  the reader may mean ("uk" resolves to Kyiv through "Ukraine"). Both would
+  change which results appear for a query — a behaviour change, not a bug fix.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

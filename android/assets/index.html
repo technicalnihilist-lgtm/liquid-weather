@@ -1400,6 +1400,7 @@ navEl.onclick = e => {
 /* ---------- search sheet ---------- */
 const sheet = $('#sheet'), qEl = $('#q'), listEl = $('#shList');
 let stT, qTimer, qSeq = 0, searchCtl = null;   // qSeq: every keystroke, open and close invalidates older searches
+let composing = false;                        // an input method is still building the text (see the handlers below)
 function openSheet() {
   tab = 'cities'; nav();
   sheet.classList.add('open');
@@ -1412,6 +1413,7 @@ function openSheet() {
   const mEl = $('#main');
   if (mEl) mEl.setAttribute('inert', '');
   qSeq++;                     // a search started before the sheet opened must not paint into it
+  composing = false;          // a composition abandoned in the last visit must not silence this one
   qEl.value = '';
   paintSheet('');
   listEl.classList.add('stagger');
@@ -1421,6 +1423,7 @@ function openSheet() {
 }
 function closeSheet() {
   clearTimeout(qTimer);        // a pending debounce would fire a search into a closed sheet
+  composing = false;           // closing the sheet can end a composition without a compositionend
   qSeq++;                      // and a request already in flight must not repaint the sheet later
   /* qSeq only stopped a late answer from being *painted*: the download it was
      waiting for kept running to its 9s deadline, and on to the second
@@ -1674,12 +1677,36 @@ async function search(q) {
   paintSheet(q, list.slice(0, 10));
 }
 
-qEl.addEventListener('input', () => {
+/* Text an input method is still composing is not a query yet. An Indic,
+   Japanese or Korean keyboard — and Android's own composition — fires an
+   `input` event for every intermediate string it is building, and every one of
+   them started a search: composing "मुंबई" issued five geocoder requests for
+   "मु", "मुं", "मुंब" and the rest, painted "No place called “मु”" on the sheet
+   under the reader's eyes while they were still typing, and did it again on the
+   free geocoding tiers that answer a burst with 429 — the very burst the
+   abort-and-supersede logic beside this handler exists to avoid. Enter pressed
+   to commit a candidate searched the unfinished text too, before the browser
+   had committed it. The box now stays quiet until the composition ends, and
+   the committed text is searched once, through the same 320ms debounce.
+   Nothing changes for a keyboard that commits as it types (every Latin layout,
+   and an autocomplete that replaces the word outright): `composing` is false
+   and `isComposing` is false, so the handler does exactly what it did. */
+qEl.addEventListener('compositionstart', () => { composing = true; });
+qEl.addEventListener('compositionend', () => {
+  composing = false;
+  clearTimeout(qTimer);
+  qTimer = setTimeout(() => search(qEl.value), 320);
+});
+qEl.addEventListener('input', e => {
+  if (composing || e.isComposing) return;    // mid-composition: not a query yet
   const q = qEl.value;
   clearTimeout(qTimer);
   qTimer = setTimeout(() => search(q), 320);
 });
-qEl.addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(qTimer); search(qEl.value); } });
+qEl.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || composing || e.isComposing) return;   // Enter commits a candidate
+  clearTimeout(qTimer); search(qEl.value);
+});
 
 function addPlace(o) {
   const id = pid(o), prevCur = cur;

@@ -30,7 +30,7 @@ echo "[2/6] aapt2 link"
   -A assets \
   --java build/gen \
   --min-sdk-version 23 --target-sdk-version 34 \
-  --version-code 33 --version-name 1.5.9 \
+  --version-code 34 --version-name 1.6 \
   --no-version-vectors
 
 echo "[3/6] javac"
