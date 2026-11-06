@@ -1624,6 +1624,67 @@ one more, found on the day's last pass.
   the reader may mean ("uk" resolves to Kyiv through "Ukraine"). Both would
   change which results appear for a query — a behaviour change, not a bug fix.
 
+## [1.6.1] — 2026-11-07
+
+### Fixed
+- **A city an older build saved twice stayed in the list twice.** 1.5.6 stopped
+  `addPlace()` and the search results from writing one place into the list twice
+  — once under the same key, once under each geocoder's own coordinates for it
+  (Bundled and Nominatim answer 0.6–10 km apart) — but the copies already in
+  local storage were never touched, because the restored list was only checked
+  field by field. A reader who hit that bug still saw Mumbai listed twice in the
+  Cities sheet, still had two of the five slots spent on one city, and could be
+  told "You can save up to 5 cities" while the list showed the same city twice.
+  The restored list is now deduped once at boot with the same `samePlace()` rule
+  the rest of the app uses, and written back, so the repair happens once rather
+  than at every launch. The row on screen is followed to its new index (the
+  surviving twin, if it was the copy that went), and the pinned "My Location"
+  row is never the copy that is dropped.
+- **One tab silently undid another tab's glass settings.** The settings object is
+  written whole, so a document that moved one slider put its own stale copies of
+  the other four back: with the app and a browser tab open, setting Blur to 20 in
+  one and then moving Transparency in the other left Blur at 50 on disk, and the
+  next launch opened with the wrong glass. The `storage` event that already keeps
+  the saved-places list in step now adopts `lw_set` the same way — validated by
+  `cleanSet()`, applied to the document, and reflected on the panel's sliders
+  when the panel is open. A document never receives its own writes, so a single
+  tab behaves exactly as it did.
+
+### Notes
+- Measured on the previous build first. Duplicate list (`lw_places` = Mumbai,
+  Mumbai, New Delhi, current index 0): the Cities sheet painted three saved rows
+  with Mumbai twice, and storage kept all three. Now two rows — Mumbai, New
+  Delhi — and storage holds two. The same list with Mumbai at 19.076/72.877 and
+  at 19.055/72.869 (the two geocoders' answers for one city), current index 2:
+  the sheet painted Mumbai twice and the index pointed at New Delhi; now one
+  Mumbai row, current index 1, still New Delhi on screen. A clean list and a list
+  whose pinned row duplicates a saved one are both left exactly as they were.
+- Two-tab settings check: on 1.6, tab B's Blur 20 became 50 in storage as soon
+  as tab A moved Transparency, and tab A's `--blur` stayed at 22.0px; now storage
+  keeps `bl:20` and tab A's `--blur` follows it to 11.2px. With the panel open,
+  the slider and its readout follow the adopted value (35 / 35%).
+- Nothing visible changes: the `<style>` block and every line of markup before
+  the script are byte-identical to 1.6 (20,792 characters), and for each of the
+  four stored lists above the rendered `#main` markup and 23 elements' computed
+  styles (radius, backdrop blur, colour, size, padding, gradient, shadow) and the
+  six settings variables are identical to 1.6's.
+- `node --check` is clean on the extracted script; a headless Chromium load
+  reports zero console errors, and so does a 400-action random pass (tabs,
+  sliders, sheet, removals, unit toggle, Escape) on both builds.
+- `versionCode 35` / `versionName 1.6.1` in `AndroidManifest.xml` and `build.sh`
+  (up from 34 / 1.6), same signing key — certificate SHA-256 `2035d69f…9e3b8b`,
+  unchanged, and the APK verifies against v1, v2 and v3 schemes.
+  `android/assets/index.html` is byte-identical to `web/index.html` (SHA-256
+  `fddedb6b…`) and so is the copy inside the rebuilt APK. `CHECKSUMS.txt` points
+  at the new build (`feb62e53…`).
+- Left alone deliberately: `LS.set()` still swallows a quota error, so a full
+  storage quota loses a saved city silently — the list is a few hundred bytes and
+  nothing reachable through the UI comes close to the quota, and every way of
+  telling the reader would add wording the UI freeze forbids. Also left alone: a
+  stored list that holds the pinned row *and* the same city saved is not repaired
+  (the pin wins, the duplicate stays), because dropping either row would change
+  what the app does with "Use my current location".
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

@@ -389,6 +389,23 @@ const savePlaces = () => { LS.set('lw_places', places); LS.set('lw_cur', cur); }
    adopted through the same validation a cold load uses, so the copies cannot
    drift apart and nothing one tab saved is thrown away by the other. */
 addEventListener('storage', e => {
+  /* The settings object is written whole, so the tab that moved one slider put
+     its own stale copies of the other four back: tab B set Blur to 20, tab A
+     then moved Transparency and Blur was 50 again — tab B's choice was silently
+     undone on disk, and the next launch opened with the wrong glass. The value
+     that was actually stored is adopted here, by the same rule the saved list
+     below follows, and the panel's sliders follow it when the panel is on
+     screen. A document never receives its own writes, so one tab behaves
+     exactly as it did before. */
+  if (e.key === 'lw_set') {
+    if (e.newValue === null) return;             // a cleared key is not a setting
+    let raw;
+    try { raw = JSON.parse(e.newValue); } catch (_) { return; }
+    SET = cleanSet(raw);
+    applySettings();
+    if (setEl.classList.contains('open')) paintSettings();
+    return;
+  }
   if (e.key !== 'lw_places' || e.newValue === null) return;   // a removed key is not a list
   let raw;
   try { raw = JSON.parse(e.newValue); } catch (_) { return; }  // not a list we can trust
@@ -1543,6 +1560,32 @@ function samePlace(a, b) {
   const dLon = (a.lon - b.lon) * 111.32 * Math.cos((a.lat + b.lat) / 2 * Math.PI / 180);
   return dLat * dLat + dLon * dLon <= SAME_KM * SAME_KM;
 }
+/* The saved list is the one piece of state that outlives every build, and older
+   builds wrote the same city into it twice: once under one key (the duplicate
+   save fixed in 1.5.6) and once under each geocoder's own coordinates for it
+   (Bundled and Nominatim, 0.6-10 km apart). addPlace() and the search results
+   recognise those rows as one place now, but the copies already in storage were
+   restored as-is, so the city was still listed twice in the Cities sheet, still
+   cost two of the five slots, and the app could refuse a fifth city while
+   showing the same one twice. The restored list is deduped once, with the same
+   rule the rest of the app uses, and written back so the repair is not repeated
+   at every launch. The pinned row is never the copy that is dropped. */
+function repairSaved() {
+  const keep = places[cur] || null;                 // the row on screen, by identity
+  const before = places.length;
+  for (let i = 0; i < places.length; i++) {
+    for (let j = places.length - 1; j > i; j--) {
+      if (places[j].myLoc && !places[i].myLoc) continue;   // keep "My Location" pinned
+      if (samePlace(places[i], places[j])) places.splice(j, 1);
+    }
+  }
+  if (places.length === before) return;             // nothing was duplicated
+  const at = keep ? places.indexOf(keep) : -1;
+  /* the selected row may have moved, or been one of the copies just dropped */
+  cur = at >= 0 ? at : (keep ? places.findIndex(p => samePlace(p, keep)) : -1);
+  cur = Math.max(0, Math.min(cur < 0 ? 0 : cur, places.length - 1));
+  savePlaces();
+}
 
 function row(o) {
   /* the ✕ is a real control: it names the place it removes, takes keyboard
@@ -2008,6 +2051,7 @@ addEventListener('keydown', e => { if (e.key === 'Escape' && setEl.classList.con
 applySettings(); paintSettings();   // paint sliders at boot, not only when the panel opens
 
 /* ---------- boot ---------- */
+repairSaved();                                  // one city, one row — also for lists an older build left behind
 document.body.classList.add('intro'); setTimeout(() => document.body.classList.remove('intro'), 2600);
 document.addEventListener('touchstart', function () {}, { passive: true });   // enables :active press states on iOS
 nav();
