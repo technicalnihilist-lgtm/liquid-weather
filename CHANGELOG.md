@@ -1381,6 +1381,71 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   anything else. Tightening that to country codes would change which results
   appear for a query, which is a behaviour change rather than a bug fix.
 
+## [1.5.7] — 2026-11-06
+
+### Fixed
+- **The summary card described daylight at night.** Only the clear-sky sentence
+  was ever told the time of day; the rest of the table was written for noon and
+  used whatever the clock said. A city at 23:00 under partly cloudy skies (code
+  2) read "Partly cloudy with a few sunny spells" beside a ☁️ icon on a night
+  sky, overcast (3) read "with little direct sun", and steady rain (63–67) read
+  "through the day" — all of it contradicted by the hero line, the icons and the
+  night background drawn around it. The cloud and steady-rain sentences now
+  follow `day`, exactly as the clear-sky one already did, so 23:00 reads
+  "Partly cloudy overnight, with clearer spells at times", "Overcast overnight,
+  with little clear sky" and "Steady rain through the night". Every daytime
+  sentence these replace is unchanged.
+- **Four codes were described as something they are not.** The intensity
+  thresholds were coarse enough to contradict the hero label sitting above the
+  card: light showers (80) were called "heavy at times" while the hero said
+  "Light showers" and the icon drew 🌦️; heavy drizzle (55, and 57, dense
+  freezing drizzle) was called "light rain"; and snow grains (77) plus snow
+  showers (85, 86) all fell into one `code >= 75` branch and were called "Heavy
+  snow falling and settling" — the heaviest sentence in the table — under a
+  "Snow grains" / "Snow showers" hero. Each now gets the sentence its own WMO
+  entry promises: "A few light showers passing through", "Heavy drizzle through
+  the day/night", "Snow grains falling", "Snow showers passing through".
+  Heavy snow (75), showers (81) and heavy showers (82) keep exactly what they
+  said before.
+
+### Notes
+- Nothing visible changes apart from those sentences: for six probe scenarios
+  (clear day, cloudy night, steady rain at night, light showers, thunderstorm,
+  unknown code at night) the rendered `#main` is byte-identical to 1.5.6 with
+  the summary text taken out, and the scene background, hero condition and all
+  15 icons are unchanged. Across all 28 WMO codes plus an unknown code, day and
+  night, **18 of 62 summary strings changed and no icon, condition label or
+  scene key did**; the only computed-style difference found is `opacity` on the
+  randomly seeded clouds, which the same old-vs-old baseline shows too.
+  `node --check` is clean on the extracted script, and a headless load with the
+  forecast stubbed reports zero console errors on both files.
+- `versionCode 31` / `versionName 1.5.7` in `AndroidManifest.xml` and
+  `build.sh` (up from 30 / 1.5.6), same signing key — certificate SHA-256
+  `2035d69f…9e3b8b`, unchanged, and the APK verifies against v1, v2 and v3
+  schemes. `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `76057d2a…`) and so is the copy inside the rebuilt APK.
+  `MainActivity.java` is untouched, so the packaged `classes.dex` is
+  byte-identical to 1.5.6's (SHA-256 `de209f1f…`); the build ran the same
+  aapt2 → zipalign → apksigner steps as `android/build.sh`, which cannot compile
+  the Java in this pass's environment (no JDK compiler available), and the dex
+  was carried over unchanged rather than recompiled. `CHECKSUMS.txt` points at
+  the new build (`1d3e1c62…`).
+- Left alone deliberately: "Drizzle" (53) and light freezing drizzle (56) still
+  read "Light rain on and off", and freezing rain (66, 67) still reads "Steady
+  rain". Saying "freezing" would need a new sentence and an ice warning the app
+  does not have, and the existing wording is not wrong about the precipitation
+  itself.
+- Left alone deliberately: moderate snow (73) still reads "Light snow falling
+  and settling" — understated, but not false, and rewriting it would change a
+  sentence that was never contradicted by anything else on screen.
+- Left alone deliberately: the 7-day strip still uses the daytime glyph for
+  every row, including today. A daily row describes a whole day, so the
+  night-time variants do not belong there.
+- Left alone deliberately: the forecast request still asks for `precipitation`,
+  `cloud_cover`, `sunrise`, `sunset` and `precipitation_probability_max`, none
+  of which the renderer reads. Dropping them would shrink every payload, but
+  that is the network pass's area, not this one.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

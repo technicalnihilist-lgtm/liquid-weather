@@ -1058,16 +1058,36 @@ function summarise(w, cond, code) {
      for any code added to the model after this build. Only 2 and 3 reach this
      branch from the table; an unrecognised code now falls back to the generic
      sentence the function already uses when it has nothing better to say. */
+  /* Only the `sun` branch was ever told the time of day, so the rest of the
+     table described daylight whatever the clock said: a city at 23:00 with
+     partly cloudy skies (2) read "Partly cloudy with a few sunny spells" over a
+     night sky and a ☁️ icon, overcast (3) read "little direct sun", and steady
+     rain (63-67) read "through the day". The cloud and steady-rain sentences
+     now follow `day`, exactly as the clear-sky one already did; every sentence
+     they replace is unchanged for a daytime forecast.
+     The intensity thresholds were also coarse enough to contradict the hero:
+     light showers (80) were called "heavy at times", heavy drizzle (55, 57)
+     was called "light rain", snow grains (77) and snow showers (85, 86) were
+     both called "Heavy snow falling and settling" because everything from 75
+     up shared one sentence. Each now gets the sentence its own WMO entry
+     promises, and 75, 81 and 82 keep exactly what they said before. */
   const base = {
     sun:   day ? 'Clear skies with plenty of sunshine.' : 'Clear and calm tonight — good stargazing.',
-    cloud: code === 3 ? 'Overcast and grey, with little direct sun.'
-         : code === 2 ? 'Partly cloudy with a few sunny spells.'
+    cloud: code === 3 ? (day ? 'Overcast and grey, with little direct sun.' : 'Overcast overnight, with little clear sky.')
+         : code === 2 ? (day ? 'Partly cloudy with a few sunny spells.' : 'Partly cloudy overnight, with clearer spells at times.')
          : 'Mixed conditions.',
     fog:   'Fog and low cloud are cutting visibility.',
-    rain:  code >= 80 ? 'Showers passing through, heavy at times.'
-         : code >= 63 ? 'Steady rain through the day.' : 'Light rain on and off.',
+    rain:  code >= 80 ? (code === 80 ? 'A few light showers passing through.'
+                       : 'Showers passing through, heavy at times.')
+         : code >= 63 ? (day ? 'Steady rain through the day.' : 'Steady rain through the night.')
+         : code === 55 || code === 57
+             ? (day ? 'Heavy drizzle through the day.' : 'Heavy drizzle through the night.')
+         : 'Light rain on and off.',
     storm: 'Thunderstorms around — stay indoors where you can.',
-    snow:  code >= 75 ? 'Heavy snow falling and settling.' : 'Light snow falling and settling.'
+    snow:  code >= 85 ? 'Snow showers passing through.'
+         : code === 77 ? 'Snow grains falling.'
+         : code >= 75 ? 'Heavy snow falling and settling.'
+         : 'Light snow falling and settling.'
   }[cond] || 'Mixed conditions.';
   const parts = [base];
   if (pop != null && pop >= 30 && (cond === 'rain' || cond === 'storm' || cond === 'snow')) {

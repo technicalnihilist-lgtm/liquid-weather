@@ -9,7 +9,7 @@ Verify a download before installing:
 Compare the output with the line below. The same digest is shown on the
 release page and by the GitHub API for the release asset.
 
-0ff181384e52a4f86573f6b67b0c3f07679457ad0358a5ef7bc6ce614dc2982c  LiquidWeather.apk
+1d3e1c62dc5127012778a54254970513a6d26d3aba78e15976d9a436c2e6b162  LiquidWeather.apk
 
 You can also confirm the APK is signed by this project's key:
 
