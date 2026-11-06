@@ -1446,6 +1446,63 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   of which the renderer reads. Dropping them would shrink every payload, but
   that is the network pass's area, not this one.
 
+## [1.5.8] — 2026-11-06
+
+### Fixed
+- **A location fix for a row that no longer existed was still written, named and
+  cached.** `locate()` only ever asked whether a newer location request had
+  superseded it. The pinned row itself can be gone by the time the fix arrives:
+  a city picked from the search sheet takes the row over when it is the only
+  place in the list and still has no fix, and another tab's saved list can
+  replace it. The fix was written to the orphaned row anyway, so the app
+  downloaded a forecast nobody could see, cached it under coordinates no row
+  owned — where it stayed for the rest of the session — asked a geocoder to name
+  a place nobody had asked about, and announced "Updated to your location" over
+  a screen showing the city the reader had just picked. The two guards now also
+  require the row to still be in the list.
+- **A forecast could be cached under a key no row owned.** Both cache writes
+  happen after an `await`, and the row can stop existing in between — a fix
+  arriving for the pinned row re-keys it, the reader deletes a city, a picked
+  city replaces the pinned row. `pruneCache()`'s rule (an entry survives only
+  while its city is in the list) held at every delete but not at every write, so
+  such a payload was stored and never read again. Both writes now prune, so the
+  rule holds everywhere.
+
+### Notes
+- Measured on the previous build first: with a fix pending, picking a city from
+  the sheet left `cache` holding `c18.520,73.857` beside a list of
+  `c18.520,73.860`, cost two forecast requests instead of one and one
+  reverse-geocode request for a row that no longer existed. After the change the
+  same scenario ends with one cache entry, one forecast request and no geocoder
+  request.
+- Nothing visible changes: for a stubbed forecast, the rendered `#main`, `#nav`,
+  the settings panel (closed and open) and the search sheet are byte-identical
+  to 1.5.7, and so is the scene state (`mode`, particle count, background
+  classes, `--cc`). No CSS, markup, wording or timing was touched.
+- No leak was found in the rest of the area this pass covered: over 40 searches,
+  40 forced re-renders, 20 panel cycles, 15 add/remove cycles and 8 locate
+  cycles the live listener count, node count and JS heap all plateau (listeners
+  56, heap ≈1.84 MB, no orphan nodes after GC), no timer is left pending at rest,
+  and with the page hidden the particle loop and the lightning chain both stop
+  and pick up again on return.
+- `node --check` is clean on the extracted script; a headless Chromium load
+  reports zero console errors.
+- `versionCode 32` / `versionName 1.5.8` in `AndroidManifest.xml` and
+  `build.sh` (up from 31 / 1.5.7), same signing key — certificate SHA-256
+  `2035d69f…9e3b8b`, unchanged, and the APK verifies against v1, v2 and v3
+  schemes. `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `097635b7…`) and so is the copy inside the rebuilt APK.
+  `MainActivity.java` is untouched, so the packaged `classes.dex` is
+  byte-identical to 1.5.7's (SHA-256 `de209f1f…`). `CHECKSUMS.txt` points at the
+  new build (`81df4ef2…`).
+- Left alone deliberately: the `setInterval(autoRefresh, 60 * 1000)` still ticks
+  in the background, throttled by the browser and returning immediately unless
+  the page is visible. Replacing it with a timer that is armed on return would
+  be tidier but changes nothing measurable.
+- Left alone deliberately: `getPosition()`'s losing 2.5 s `GEO_NAME_WAIT` timer
+  is not cleared when the geocoder answers first. It fires once, resolves an
+  already-settled `Promise.race` and is gone; no timer survives at rest.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
