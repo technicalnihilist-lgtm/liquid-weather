@@ -210,6 +210,12 @@ nav{transform:translate3d(calc(var(--mx)*var(--pr)*var(--dp)*-9px),calc(var(--my
       <button class="sh-x" id="closeSheet" aria-label="Close search">✕</button>
     </div>
     <div class="sh-list" id="shList"></div>
+    <!-- What the list below holds, for a screen reader. The sheet had no live
+         region at all, so "Searching…", a set of results and "No place
+         called …" all arrived in silence; a status region that is clipped out
+         of the layout says the same thing aloud. It takes no space and paints
+         nothing. -->
+    <div id="shStatus" role="status" aria-live="polite" style="position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap"></div>
   </div>
 
   <div id="scrim"></div>
@@ -1415,7 +1421,7 @@ navEl.onclick = e => {
 };
 
 /* ---------- search sheet ---------- */
-const sheet = $('#sheet'), qEl = $('#q'), listEl = $('#shList');
+const sheet = $('#sheet'), qEl = $('#q'), listEl = $('#shList'), shStatus = $('#shStatus');
 let stT, qTimer, qSeq = 0, searchCtl = null;   // qSeq: every keystroke, open and close invalidates older searches
 let composing = false;                        // an input method is still building the text (see the handlers below)
 function openSheet() {
@@ -1596,7 +1602,15 @@ function row(o) {
   const right = idx >= 0
     ? `<span class="rm" data-rm="${idx}" role="button" tabindex="0" aria-label="Remove ${esc(o.name)}">✕</span>` : '';
   const isSaved = idx >= 0;
-  return `<button class="sh-i" data-lat="${o.lat}" data-lon="${o.lon}" data-name="${esc(o.name)}" data-sub="${esc(o.sub || '')}">
+  /* The row's spoken name was taken from its contents, and its contents include
+     the ✕ — so a row for a saved city was announced as "Mumbai India Remove
+     Mumbai": the row itself sounded like the delete action, and the name was
+     read twice, once inside the row and once for the ✕ (which is a control of
+     its own, as Chrome's tree shows). The name is stated here instead, the way
+     the °C/°F button's is; the visible text is untouched and the ✕ keeps its
+     own label. */
+  const name = o.name + (o.sub ? ', ' + o.sub : '');
+  return `<button class="sh-i" aria-label="${esc(name)}" data-lat="${o.lat}" data-lon="${o.lon}" data-name="${esc(o.name)}" data-sub="${esc(o.sub || '')}">
     <span class="ic">${isSaved ? '📍' : '🔎'}</span>
     <span style="min-width:0"><b>${esc(o.name)}</b><small>${esc(o.sub || '')}</small></span>${right}</button>`;
 }
@@ -1615,7 +1629,7 @@ function paintSheet(q, results) {
     </div>`;
   if (saved.length) {
     html += `<div class="sh-h">Saved places</div>` + saved.map(p =>
-      `<button class="sh-i" data-go="${places.indexOf(p)}">
+      `<button class="sh-i" aria-label="${esc(p.name + (p.sub ? ', ' + p.sub : ''))}" data-go="${places.indexOf(p)}">
         <span class="ic">🏙️</span>
         <span style="min-width:0"><b>${esc(p.name)}</b><small>${esc(p.sub || '')}</small></span>
         <span class="rm" data-rm2="${places.indexOf(p)}" role="button" tabindex="0" aria-label="Remove ${esc(p.name)}">✕</span></button>`).join('');
@@ -1628,6 +1642,19 @@ function paintSheet(q, results) {
   } else {
     html += `<div class="sh-h">Popular</div>` + POPULAR.slice(0, 8).map(o =>
       row({ name: o[0], sub: o[1], lat: o[2], lon: o[3] })).join('');
+  }
+  /* The sheet answered a query silently: nothing in it was a live region, so a
+     screen-reader user typing "mum" heard their own letters and then nothing —
+     not "Searching…", not the results, not "No place called …". The status
+     region added to the sheet says what the list now holds, in the same words a
+     sighted reader gets. An unchanged sentence is not re-announced, so a
+     repaint after a removal stays quiet. */
+  if (shStatus) {
+    const term = q.trim();
+    shStatus.textContent = !term ? ''
+      : results === null ? 'Searching…'
+      : results.length ? results.length + (results.length === 1 ? ' result for ' : ' results for ') + '“' + term + '”'
+      : 'No place found for “' + term + '”';
   }
   listEl.innerHTML = html;
 }

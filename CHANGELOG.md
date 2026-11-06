@@ -1685,6 +1685,65 @@ one more, found on the day's last pass.
   (the pin wins, the duplicate stays), because dropping either row would change
   what the app does with "Use my current location".
 
+## [1.6.2] — 2026-11-07
+
+### Fixed
+- **The search sheet answered a query in silence.** Nothing inside it was a live
+  region, so a screen-reader user who typed a search heard their own letters and
+  then nothing at all: not "Searching…", not the results that appeared below
+  the box, not the "No place called …" card. The only live region in the whole
+  app was the toast. The sheet now carries a status line — clipped out of the
+  layout, painting nothing — that says what the list holds: "Searching…",
+  "2 results for “mum”", "No place found for “zzz”", and nothing at all when the
+  box is empty. A sentence that has not changed is not announced again, so the
+  repaint after a removal stays quiet, and closing the sheet leaves no stale
+  text behind for the next visit.
+- **A saved row was announced as the delete action.** The row's spoken name was
+  computed from its contents, and its contents include the ✕: a saved city was
+  read as "Mumbai India Remove Mumbai", so the row itself sounded like a delete
+  button, and the name was read twice — once inside the row and once for the ✕,
+  which is a control of its own in Chrome's accessibility tree. The name is now
+  stated explicitly ("Mumbai, Maharashtra, India"), the way the °C/°F button's
+  is; the ✕ keeps its own "Remove Mumbai" label, and the row's visible text is
+  untouched.
+
+### Notes
+- Measured on 1.6.1 first: typing "mum" with a slow geocoder left the sheet with
+  **no** status node at all, and the first saved row was announced as
+  "🏙️ New Delhi India Remove New Delhi". Now the status reads "" →
+  "Searching…" → "2 results for “mum”", and "No place found for “zzz”" for a
+  query that matches nothing; the row is announced as "New Delhi, India" beside a
+  separate "Remove New Delhi" button. The ✕ still removes the city when Enter is
+  pressed on it, and focus lands back on "Use my current location".
+- Nothing visible changes: with animations frozen and `Math.random` seeded,
+  screenshots of the forecast page, the open sheet, a query with results and a
+  query with no match are byte-identical to 1.6.1's (the only pixels that differ
+  between any two runs — including two runs of the *same* file — are the
+  blinking caret and the nav pill's animation phase). Twenty-three elements'
+  computed styles, their geometry and the rendered `#main` markup are unchanged,
+  and the new status node is 1×1, clipped and absolutely positioned, so it takes
+  no space and paints nothing.
+- `node --check` is clean on the extracted script, and a headless Chromium load
+  reports zero console errors on both builds.
+- `versionCode 36` / `versionName 1.6.2` in `AndroidManifest.xml` and `build.sh`
+  (up from 35 / 1.6.1), same signing key — certificate SHA-256 `2035d69f…9e3b8b`,
+  unchanged, and the APK verifies against v1, v2 and v3 schemes.
+  `android/assets/index.html` is byte-identical to `web/index.html` (SHA-256
+  `856d20ca…`) and so is the copy inside the rebuilt APK. `CHECKSUMS.txt` points
+  at the new build (`f36dea85…`).
+- Left alone deliberately: **the ✕ is still nested inside the row's `<button>`** —
+  invalid markup that axe reports as `nested-interactive` on every saved row and
+  every saved search result. Fixing it means moving the ✕ out into a wrapper that
+  carries the row's glass box, which changes the row's tap target (the 12/14px
+  padding would no longer select the city) and the element the press animation
+  runs on. That is a visible, behavioural change, so only the name was fixed.
+- Also left alone: the hourly strip, which axe flags as
+  `scrollable-region-focusable`; Chrome already makes an `overflow-x:auto` box
+  focusable and scrollable with the arrow keys (verified: it is in the tab order,
+  and ArrowRight moves it 40px), so a `tabindex` would be a no-op here. Text
+  contrast over the scenes was not touched either — every way of raising it is a
+  colour change, which the freeze forbids.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
