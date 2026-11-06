@@ -1124,6 +1124,20 @@ function summarise(w, cond, code) {
 }
 
 function renderSkeleton(p) {
+  /* The skeleton replaces whatever the screen was showing, so a forecast still
+     on its way belongs to a screen that no longer exists. Only show() ever
+     invalidated a pending request, and it is not called on the paths that come
+     here with a request in flight — picking a row that has no fix yet from the
+     sheet, "Use my current location", another tab's saved list — so the
+     abandoned download ran to completion and painted over the skeleton when it
+     landed: tapping "Use my current location" while Mumbai's forecast was
+     loading put Mumbai's bar, hero, temperature, condition and cards back on
+     screen under a "Locating…" the reader had just asked for, with `cur` on
+     "My Location", and it stayed that way until a fix arrived or the 15s
+     watchdog repainted. The newest screen wins, and the download is dropped
+     instead of being left to finish. */
+  showSeq++;
+  if (fcCtl) { fcCtl.abort(); fcCtl = null; }
   lastKey = ''; $('#main').classList.remove('loading');
   scene('cloud', true);
   holdFocusIn('#main');

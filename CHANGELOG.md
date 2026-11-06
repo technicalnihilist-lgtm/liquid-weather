@@ -1503,6 +1503,61 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   is not cleared when the geocoder answers first. It fires once, resolves an
   already-settled `Promise.race` and is gone; no timer survives at rest.
 
+## [1.5.9] — 2026-11-06
+
+### Fixed
+- **A forecast request outlived the screen that started it and painted over the
+  next one.** Only `show()` ever invalidated a pending forecast, and the three
+  paths that draw the "Locating…" skeleton — picking a row that has no fix yet
+  from the Cities sheet, "Use my current location", another tab's saved list —
+  never call it. So the abandoned download ran to completion and rendered when
+  it landed: with Mumbai's forecast in flight, tapping "Use my current
+  location" put Mumbai's city bar, hero, temperature, condition, summary and
+  cards back on screen on top of the "Locating…" the reader had just asked for,
+  while `cur` was on "My Location" — and it stayed that way until a fix arrived
+  or the 15-second geolocation watchdog fired. `renderSkeleton()` now takes the
+  screen over: it bumps `showSeq`, so a late answer can never paint, and aborts
+  the request it superseded instead of leaving it to finish.
+
+### Notes
+- Measured on the previous build first: the same two scenarios (picking the
+  pinned row from the sheet, and the "Use my current location" button, each
+  with a 2.5 s forecast in flight) ended with `#main` showing "Mumbai /
+  27° / Light rain / 📍 Mumbai, India" while `places[cur]` was "My Location".
+  After the change both end with the skeleton still up — "My Location / --° /
+  Locating…" — and one fewer forecast download runs to completion.
+- Nothing visible changes: for a stubbed forecast the rendered `#main`, `#nav`,
+  the pill, the search sheet and the settings panel (closed and open) are
+  identical to 1.5.8 across the rain, clear-day, clear-night and snow scenes,
+  and so is every settings variable (`--k`, `--glass`, `--blur`, `--dp`,
+  `--pr`, `--spring`); only `--mx`/`--my`, which follow the pointer, vary from
+  run to run — the same two fields differ between two runs of the *unchanged*
+  build. No CSS, markup, wording or timing was touched.
+- No other leak was found in this pass's area: every `addEventListener` in the
+  page is registered once at load, no timer survives at rest, the particle loop
+  and the lightning chain stop while the page is hidden and resume on return
+  (measured: 0 frames while hidden, 16 in the first 1.2 s after return), and
+  `MainActivity` already hands the WebView its `onPause`/`onResume` and detaches
+  it before `destroy()`.
+- `node --check` is clean on the extracted script; a headless Chromium load
+  reports zero console errors.
+- `versionCode 33` / `versionName 1.5.9` in `AndroidManifest.xml` and
+  `build.sh` (up from 32 / 1.5.8), same signing key — certificate SHA-256
+  `2035d69f…9e3b8b`, unchanged, and the APK verifies against v1, v2 and v3
+  schemes. `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `88d5ddf4…`) and so is the copy inside the rebuilt APK.
+  `MainActivity.java` is untouched, so the packaged `classes.dex` is
+  byte-identical to 1.5.8's (SHA-256 `de209f1f…`). `CHECKSUMS.txt` points at the
+  new build (`5354f308…`).
+- Left alone deliberately: `removeSaved()` still repaints nothing on the main
+  screen when the row it leaves selected has no fix — the deleted city's
+  forecast stays on screen until `locate()` or `show()` repaints. It shows the
+  same city the request belongs to, so no wrong city is ever painted, and
+  giving that path its own skeleton would change what the screen does between
+  the tap and the fix.
+- Left alone deliberately, as in 1.5.8: the `setInterval(autoRefresh, 60 * 1000)`
+  and `getPosition()`'s losing 2.5 s `GEO_NAME_WAIT` timer.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
