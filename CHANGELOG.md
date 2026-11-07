@@ -1744,6 +1744,61 @@ one more, found on the day's last pass.
   contrast over the scenes was not touched either — every way of raising it is a
   colour change, which the freeze forbids.
 
+## [1.6.3] — 2026-11-07
+
+### Fixed
+- **Dragging the nav lens forced a layout of the whole document on every
+  pointermove.** `nearestBtn()` measured all three tabs with
+  `getBoundingClientRect()` each time the finger moved, and the frame before had
+  just written `--mx`/`--my` on the root (the parallax engine), so the style was
+  dirty and each measurement flushed a fresh style recalc and a fresh layout of
+  the entire page — at the pointer's own rate, which on a 120 Hz screen is above
+  the frame rate, for three boxes that had not moved. A drag is the one gesture
+  where the app spends its whole frame budget on this: the tab centres are now
+  measured once and reused, and the cache is dropped when the bar can actually
+  have moved under them — a resize, a rotation, a rebuilt tab set, a scroll of
+  the strip, or the parallax itself having shifted the bar (it rides
+  `--mx`/`--my`, so the cache is dropped once `--mx` has moved by 0.1, which is
+  under a pixel of travel at any slider setting). Measured in headless Chromium,
+  forty pointermoves of a drag: 120 box measurements and 766 ms of synchronous
+  handler time before, 24 measurements and 143 ms after; the median handler cost
+  fell from 12.4 ms to 0.1 ms.
+
+### Notes
+- Nothing visible changes. The rendered `#main` is byte-identical (same markup
+  hash, 223 nodes), so are 23 elements' computed styles, the six glass variables
+  and the frozen transforms of the cards and the nav, and a 430 × 900 screenshot
+  with *Reduce motion* on is pixel-identical. Two runs of the same file are
+  identical too, so the comparison is meaningful.
+- The tab the drag lands on is unchanged: over four drags (60→360, 360→60,
+  150→300 in 30 steps, and a sub-threshold 40→45 wiggle) the per-move hover
+  sequence, the final tab and the pill's `left`/`width` are identical to 1.6.2.
+- `node --check` is clean on the extracted script; a headless Chromium load
+  reports zero console errors, and so does a 400-action random pass (tabs,
+  sliders, sheet, searches, removals, unit toggle, 32 nav drags) on both builds
+  in rain, thunderstorm and clear scenes.
+- `versionCode 37` / `versionName 1.6.3` in `AndroidManifest.xml` and
+  `build.sh` (up from 36 / 1.6.2), same signing key — certificate SHA-256
+  `2035d69f…9e3b8b`, unchanged, and the APK verifies against v1, v2 and v3
+  schemes. `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `d711bf90…`) and so is the copy inside the rebuilt APK.
+  `CHECKSUMS.txt` points at the new build (`86f811f8…`).
+- Left alone deliberately: `placePill()` still reads `offsetLeft`,
+  `offsetWidth` and the strip's `scrollWidth`/`clientWidth` when the hovered tab
+  changes — at most three times per drag, and again on a tab change; folding it
+  into the same cache would mean caching the pill's geometry as well as the
+  buttons', for a saving of three flushes per gesture.
+- Left alone deliberately: the drag hit test still re-measures when the parallax
+  has moved the bar by more than a pixel (a handful of times per drag). Removing
+  that means computing the bar's `translate3d` from `--mx`/`--my`/`--pr`/`--dp`
+  in JavaScript, i.e. duplicating the stylesheet's own 9px multiplier in the
+  script — worse than the flush it saves.
+- Also left alone, still: the backdrop blur on the glass cards (the largest
+  paint cost, and any cut visibly changes the glass), the °C/°F toggle rebuilding
+  the whole of `#main` (a restructure, not a fix), and the particle loop running
+  at the display's refresh rate rather than a capped 60 Hz (capping it would slow
+  the rain on a 120 Hz screen, which the freeze forbids).
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

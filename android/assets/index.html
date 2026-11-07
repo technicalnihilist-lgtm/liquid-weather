@@ -1361,21 +1361,48 @@ function placePill(snap, target) {
   }
   pillL = L; pillW = W; pillReady = true;
 }
-if (window.ResizeObserver) new ResizeObserver(() => placePill(true)).observe($('#track'));
+if (window.ResizeObserver) new ResizeObserver(() => { placePill(true); dropNavCentres(); }).observe($('#track'));
 
 /* press and drag: the lens follows your finger across the cities */
 let drag = null, justDragged = false;
 const cityBtns = () => [...navItems.querySelectorAll('button[data-tab]')];
+/* The drag used to measure all three tabs on every pointermove. The frame
+   before had just written --mx/--my on the root (the parallax engine), so the
+   style was dirty and each measurement flushed a fresh style recalc and a fresh
+   layout of the whole document — at the pointer's own rate, which on a 120 Hz
+   screen is above the frame rate, for boxes that had not moved. The three
+   centres are now measured once and reused until the bar can have moved under
+   them: a resize, a rotation, a rebuilt tab set, a scroll of the strip, or the
+   parallax itself (the bar rides --mx/--my, see `nav` in the stylesheet, so the
+   boxes drift by up to 9px with it — the cache is dropped once the value has
+   moved by 0.1, which is under a pixel of travel at any slider setting). The
+   tab chosen for a given pointer position is unchanged. */
+let navCentres = null, navCentresMx = 0;
+function dropNavCentres() { navCentres = null; }
+addEventListener('resize', dropNavCentres);
+addEventListener('orientationchange', dropNavCentres);
+navScroll.addEventListener('scroll', dropNavCentres, { passive: true });
+function centres() {
+  const mx = parseFloat(document.documentElement.style.getPropertyValue('--mx')) || 0;
+  if (navCentres && Math.abs(mx - navCentresMx) <= 0.1) return navCentres;
+  navCentresMx = mx;
+  navCentres = cityBtns().map(b => {
+    const r = b.getBoundingClientRect();
+    return { b, x: r.left + r.width / 2 };
+  });
+  return navCentres;
+}
 function nearestBtn(x) {
   let best = null, bd = 1e9;
-  for (const b of cityBtns()) {
-    const r = b.getBoundingClientRect(), d = Math.abs(x - (r.left + r.width / 2));
-    if (d < bd) { bd = d; best = b; }
+  for (const e of centres()) {
+    const d = Math.abs(x - e.x);
+    if (d < bd) { bd = d; best = e.b; }
   }
   return best;
 }
 navEl.addEventListener('pointerdown', e => {
   pill.classList.add('lift');
+  dropNavCentres();                           // the bar may have moved since the last drag
   drag = { x: e.clientX, moved: false, b: null, id: e.pointerId };
 });
 navEl.addEventListener('pointermove', e => {
