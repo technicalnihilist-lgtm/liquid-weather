@@ -1877,6 +1877,61 @@ one more, found on the day's last pass.
   sent (never coordinates, and never for "My Location"), and list each sky
   photo's author and licence.
 
+## [1.7.1] — 2026-11-07
+
+### Fixed
+- **One document silently threw away the city photo another had just cached.**
+  The remembered photo store (`lw_photos`) is a single map, keyed per city and
+  written whole, and nothing listened for it — the two bugs fixed for the
+  settings and the saved-places list in 1.6.1 were never closed for the store
+  added in 1.7. Tab A cached Mumbai's photo; tab B, opened before that, still
+  held a map with only the default city in it, so when B cached Bengaluru and
+  wrote its copy, Mumbai's record was gone from storage. Nothing on screen
+  broke — the photo was still in A's memory — but the next launch had to look
+  Mumbai up on Commons all over again, and with two documents open it could
+  happen to a city again and again. Every write is now a read-modify-write of
+  the union of this document's map and the stored one, and a `storage` event
+  for `lw_photos` is adopted through the same `cleanPhoto()` validation a cold
+  load uses (taking the newer of two copies of one city), so the two maps
+  cannot drift apart.
+- **A photo lookup that landed after its city was deleted left a record on
+  disk for ever.** `prunePhotos()` runs when a city is removed, but a Commons
+  request already in flight wrote its record back afterwards — for a key no row
+  could ever read again. One record per deleted city stayed in storage, taking
+  up the twelve slots the loader keeps. The record is now only written while a
+  row still owns its key.
+
+### Notes
+- Measured on 1.7 first, in headless Chromium with Commons mocked to answer one
+  photo. Two documents, A caching Mumbai's photo and then B (stale) caching
+  Bengaluru's: 1.7 left storage with two keys and Mumbai's gone; 1.7.1 leaves
+  three, Mumbai's intact, and both documents' in-memory maps hold all three.
+  Orphan check — Mumbai added, its lookup held for 1.5s, the row deleted before
+  the answer arrived: 1.7 wrote `c19.076,72.878` to storage with no row behind
+  it, 1.7.1 writes nothing.
+- No visual change: nothing before the `<script>` block differs from 1.7 (the
+  `<style>` block is byte-identical, 18,944 characters), and the diff is three
+  hunks inside the script. For the default city and for a second city the
+  rendered `#main` text and node count, the computed styles of eleven elements
+  (radius, backdrop blur, colour, size, padding, gradient, shadow), the photo
+  layer's background and opacity, and the six settings variables are identical
+  to 1.7's.
+- `node --check` is clean on the extracted script; a headless Chromium load and
+  a 120-action random pass (tabs, sliders, sheet, saves, removals, unit toggle,
+  Escape, scrolling) both report zero console errors on 1.7.1.
+- `versionCode 40` / `versionName 1.7.1` in `AndroidManifest.xml` and `build.sh`
+  (up from 39 / 1.7), same signing key — certificate SHA-256 `2035d69f…9e3b8b`,
+  unchanged, and the APK verifies against v1, v2 and v3 schemes.
+  `android/assets/index.html` is byte-identical to `web/index.html` (SHA-256
+  `c43872ea…`) and so is the copy inside the rebuilt APK. `CHECKSUMS.txt` points
+  at the new build (`105b43bb…`).
+- Left alone deliberately: `lw_unit` is still not adopted across documents, so a
+  tab that was open when the other one switched to °F keeps showing °C — making
+  it follow would change the unit label in a document that was not touched, which
+  the UI freeze rules out; and `LS.set()` still swallows a quota error (as noted
+  in 1.6.1, nothing reachable through the UI comes near the quota, and any
+  message about it would add wording the freeze forbids).
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

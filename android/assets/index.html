@@ -327,8 +327,9 @@ function cleanPhoto(v) {
            l: typeof v.l === 'string' ? v.l.slice(0, 24) : '', t: typeof v.t === 'string' ? v.t.slice(0, 80) : '',
            p: typeof v.p === 'string' ? v.p.slice(0, 200) : '', at: isFinite(at) ? at : 0 };
 }
-let photoStore = (() => {
-  const raw = LS.get('lw_photos', {});
+/* One validated map, built from whatever is stored: used at boot, before every
+   write, and for the copy another document hands over in a `storage` event. */
+function readPhotoStore(raw) {
   const out = {};
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     for (const k of Object.keys(raw).slice(0, 12)) {
@@ -337,8 +338,22 @@ let photoStore = (() => {
     }
   }
   return out;
-})();
-const savePhotos = () => LS.set('lw_photos', photoStore);
+}
+let photoStore = readPhotoStore(LS.get('lw_photos', {}));
+/* The whole store is one map written in one go, so a document that had been
+   open since before another document cached a city wrote its own stale copy
+   back over it: tab A cached Mumbai's photo, tab B — opened earlier, holding a
+   map with only the default city in it — then cached Bengaluru and wrote its
+   copy, and Mumbai's record was gone from storage. Nothing on screen broke; the
+   next launch simply looked Mumbai up all over again, and the same could happen
+   to a city every time two documents were open. Every write is now the union of
+   what this document holds and what is on disk, and the `storage` handler below
+   adopts the other document's copy, so the two maps cannot drift apart. */
+function savePhotos() {
+  const disk = readPhotoStore(LS.get('lw_photos', {}));
+  for (const k of Object.keys(disk)) if (!(k in photoStore)) photoStore[k] = disk[k];
+  LS.set('lw_photos', photoStore);
+}
 function prunePhotos() {
   const keep = new Set(places.map(p => p.id || (p.lat + ',' + p.lon)));
   let dirty = false;
@@ -419,6 +434,12 @@ function fetchCityPhoto(p, key) {
        as "none" would keep the backdrop empty for three weeks after one launch
        in a tunnel, so only a lookup that actually answered is remembered. */
     if (!r && failed) return;
+    /* A lookup that lands after its city was deleted used to be cached anyway:
+       prunePhotos() had already run, so the record was written back for a key no
+       row could ever read and stayed on disk (one per deleted city, taking up
+       the twelve slots the loader keeps). Nothing to remember when the row that
+       asked for it is gone. */
+    if (!places.some(p => photoKeyFor(p) === key)) return;
     photoStore[key] = r ? Object.assign({ at: Date.now() }, r) : { none: 1, at: Date.now() };
     savePhotos();
     if (r && places[cur] && photoKeyFor(places[cur]) === key) {
@@ -601,6 +622,22 @@ addEventListener('storage', e => {
     SET = cleanSet(raw);
     applySettings();
     if (setEl.classList.contains('open')) paintSettings();
+    return;
+  }
+  /* The photo store is written whole as well, and nothing listened for it, so
+     the copy this document held went stale the moment another one cached a city
+     — and its next write put the stale map back (see savePhotos()). Adopt what
+     the other document wrote: keep a record only this document has, and take
+     the newer of two copies of one city. */
+  if (e.key === 'lw_photos') {
+    if (e.newValue === null) return;             // a cleared key is not a store
+    let raw;
+    try { raw = JSON.parse(e.newValue); } catch (_) { return; }
+    const next = readPhotoStore(raw);
+    for (const k of Object.keys(next)) {
+      const mine = photoStore[k];
+      if (!mine || (+next[k].at || 0) >= (+mine.at || 0)) photoStore[k] = next[k];
+    }
     return;
   }
   if (e.key !== 'lw_places' || e.newValue === null) return;   // a removed key is not a list
