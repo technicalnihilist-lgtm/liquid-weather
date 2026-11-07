@@ -81,8 +81,11 @@ All four are 860×1800 PNG (a 430×900 layout at 2× density).
 ## What a reviewer should check
 
 - **No network tracking:** grep the source for `http` — the only endpoints are
-  `api.open-meteo.com`, `geocoding-api.open-meteo.com`, `api.bigdatacloud.net`
-  and `nominatim.openstreetmap.org`.
+  `api.open-meteo.com`, `geocoding-api.open-meteo.com`, `api.bigdatacloud.net`,
+  `nominatim.openstreetmap.org`, `commons.wikimedia.org` (photo lookup by city
+  name) and `upload.wikimedia.org` (the photos themselves). Only freely licensed
+  Commons files are used and each is credited by author and licence in
+  *Glass & motion → Photos*.
 - **No ads or accounts:** there is no ad SDK, no login, no analytics, no
   crash reporter, and no `INTERNET`-using service other than the weather APIs.
 - **Permissions:** `INTERNET`, `ACCESS_COARSE_LOCATION`, `ACCESS_FINE_LOCATION`

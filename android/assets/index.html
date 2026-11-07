@@ -180,6 +180,18 @@ main::-webkit-scrollbar{display:none}
 #set input[type=range]:active::-webkit-slider-thumb{transform:scale(1.28)}
 #set input[type=range]:active::-moz-range-thumb{transform:scale(1.28)}
 #setReset{margin:8px 0 0;justify-content:center}
+/* photo credits: attribution for the Wikimedia Commons imagery, required by the
+   CC licences those photos are published under. Same type scale as the rest of
+   the panel, no new colours. */
+.credits{margin:16px 0 0;padding-top:12px;border-top:1px solid var(--edge2);font-size:11.5px;line-height:1.55;color:var(--tx2);text-align:center}
+.credits b{display:block;font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;margin-bottom:5px;color:var(--tx2)}
+.credits span{display:block}
+
+/* ---------- real photo backdrop (Wikimedia Commons) ---------- */
+#photo{position:absolute;inset:0;background-size:cover;background-position:center;background-repeat:no-repeat;opacity:0;transition:opacity 1.4s ease;transform:scale(1.04);pointer-events:none}
+@media(prefers-reduced-motion:reduce){#photo{transition:none}}
+/* sunrise / sunset line inside the summary card */
+.sunline{margin-top:9px;padding-top:9px;border-top:1px solid var(--edge2);font-size:13px;font-weight:600;color:var(--tx2)}
 @media(prefers-reduced-motion:reduce){.intro #nav,.intro #navItems>button{animation:none!important}}
 
 /* ---------- 4D depth & parallax ---------- */
@@ -198,6 +210,11 @@ nav{transform:translate3d(calc(var(--mx)*var(--pr)*var(--dp)*-9px),calc(var(--my
 <body>
 <div class="phone">
   <div id="bgs"></div>
+  <!-- A real photograph behind the glass: the selected city from Wikimedia
+       Commons when one resolves, otherwise a CC-licensed sky for the current
+       weather. Stays empty (and invisible) when the network or the licence
+       check fails, so the app looks exactly as it did before. -->
+  <div id="photo" aria-hidden="true"></div>
   <div class="layer" id="orbLayer"><div class="orb" id="sun"></div><div class="orb" id="moon"></div><div id="clouds"></div></div>
   <canvas id="fx" aria-hidden="true"></canvas>
   <div class="layer" id="flash"></div>
@@ -230,6 +247,7 @@ nav{transform:translate3d(calc(var(--mx)*var(--pr)*var(--dp)*-9px),calc(var(--my
     <label class="rowr"><span>Depth</span><output id="o_dp"></output><input type="range" id="r_dp" min="0" max="100" aria-label="Depth"><small>3D separation between sky, clouds, cards and nav</small></label>
     <label class="rowr"><span>Parallax</span><output id="o_pr"></output><input type="range" id="r_pr" min="0" max="100" aria-label="Parallax"><small>Follows tilt, finger and scroll — 0 turns it off</small></label>
     <button class="sh-loc" id="setReset">Reset to default</button>
+    <div class="credits" id="credits"><b>Photos</b><span id="credLine">Wikimedia Commons</span></div>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
 </div>
@@ -259,6 +277,179 @@ const SCENES = {
   snow:  { name:'Snow',         bg:['#5f7fa6','#a0b9d8','#dce8f5'], cc:'#f2f6fb', co:.8,  n:5, fx:'snow',  orb:'',
            nbg:['#131a2e','#28324f','#3e4a6b'], ncc:'#cfd8e8', nco:.6,  nn:5, nfx:'snow',  norb:'' }
 };
+
+/* ---------- real photographs (Wikimedia Commons) ----------
+   The sky behind the glass is now a real photograph: the city you are looking
+   at when Commons has a freely licensed one, otherwise a CC-licensed sky for
+   the weather on screen. Every photo is credited in *Glass & motion* (author +
+   licence), which is what the CC BY / CC BY-SA files below require.
+   Three rules keep this safe on a phone:
+   1. Nothing here can break the app. Every request fails soft — no network, no
+      matching file, an unusable licence, a 404 — and the layer simply stays
+      invisible, which is exactly the design the app shipped before.
+   2. Only free licences are accepted (CC0, CC BY, CC BY-SA, public domain).
+      Anything Commons marks as fair use or with no licence is skipped.
+   3. The chosen file is remembered per city for three weeks, so a city is
+      looked up once rather than on every launch, and the API is never polled.
+   The scene skies are fixed files chosen for their licence and for being sky
+   rather than landscape, so the backdrop does not read as a photo of somewhere
+   else while you are looking at another city. */
+const COMMONS_API = 'https://commons.wikimedia.org/w/api.php';
+const PHOTO_OK_LICENCE = /^(cc0|cc by|cc-by|public domain|pd)/i;
+const SCENE_PHOTOS = {
+  cloud: { a:'Rise DHMN',            l:'CC BY 4.0',    t:'Cirrus-cumulus clouds in the sky 2',
+           u:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1f/Cirrus-cumulus_clouds_in_the_sky_2.jpg/1280px-Cirrus-cumulus_clouds_in_the_sky_2.jpg' },
+  fog:   { a:'Muntashir.islam',      l:'CC BY-SA 4.0', t:'Stratus cloud near Mithapukur, Rangpur (1)',
+           u:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Stratus_cloud_near_Mithapukur%2C_Rangpur_%281%29.jpg/1280px-Stratus_cloud_near_Mithapukur%2C_Rangpur_%281%29.jpg' },
+  rain:  { a:'W.carter',             l:'CC0',          t:'Storm clouds coming in over Gåseberg 2',
+           u:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/Storm_clouds_coming_in_over_G%C3%A5seberg_2.jpg/1280px-Storm_clouds_coming_in_over_G%C3%A5seberg_2.jpg' },
+  storm: { a:'Santhoshj',            l:'CC BY 3.0',    t:'Cloudscape santhosh',
+           u:'https://upload.wikimedia.org/wikipedia/commons/thumb/7/74/Cloudscape_santhosh.JPG/1280px-Cloudscape_santhosh.JPG' },
+  snow:  { a:'Vyacheslav Argenberg', l:'CC BY 4.0',    t:'Shaheed Island, Andaman Sea, Overcast sky',
+           u:'https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Shaheed_Island%2C_Andaman_Sea%2C_Overcast_sky.jpg/1280px-Shaheed_Island%2C_Andaman_Sea%2C_Overcast_sky.jpg' }
+};
+const PHOTO_TTL = 21 * 24 * 3600 * 1000;
+const stripTags = s => String(s || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+/* A stored photo record is untrusted like every other stored value: a hand-edited
+   or truncated `lw_photos` must not be able to hand the layer a non-string URL. */
+function cleanPhoto(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  /* Parsed here rather than through `toNum()`: this runs while the module is
+     still loading, before the state helpers below are initialised, and reaching
+     for one of them there throws "Cannot access before initialization" and takes
+     the whole boot with it. */
+  const at = typeof v.at === 'number' ? v.at
+    : (typeof v.at === 'string' && v.at.trim() !== '' ? +v.at : NaN);
+  if (v.none) return { none: 1, at: isFinite(at) ? at : 0 };
+  const u = typeof v.u === 'string' ? v.u : '';
+  if (!/^https:\/\/[a-z0-9.-]*wikimedia\.org\//i.test(u)) return null;
+  return { u: u.slice(0, 400), a: typeof v.a === 'string' ? v.a.slice(0, 60) : 'Wikimedia Commons',
+           l: typeof v.l === 'string' ? v.l.slice(0, 24) : '', t: typeof v.t === 'string' ? v.t.slice(0, 80) : '',
+           p: typeof v.p === 'string' ? v.p.slice(0, 200) : '', at: isFinite(at) ? at : 0 };
+}
+let photoStore = (() => {
+  const raw = LS.get('lw_photos', {});
+  const out = {};
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const k of Object.keys(raw).slice(0, 12)) {
+      const c = cleanPhoto(raw[k]);
+      if (c) out[String(k).slice(0, 120)] = c;
+    }
+  }
+  return out;
+})();
+const savePhotos = () => LS.set('lw_photos', photoStore);
+function prunePhotos() {
+  const keep = new Set(places.map(p => p.id || (p.lat + ',' + p.lon)));
+  let dirty = false;
+  for (const k of Object.keys(photoStore)) if (!keep.has(k)) { delete photoStore[k]; dirty = true; }
+  if (dirty) savePhotos();
+}
+let cityPhoto = null, scenePhotoNow = null, photoSeq = 0, photoCtl = null, photoToken = 0;
+const photoCtx = { day: true, cov: .5 };
+const photoKeyFor = p => p ? (p.id || (p.lat + ',' + p.lon)) : '';
+
+function paintCredit() {
+  const el = $('#credLine');
+  if (!el) return;
+  const rows = ['Wikimedia Commons'];
+  if (cityPhoto && cityPhoto.u) rows.push('City photo: ' + cityPhoto.a + ' — ' + (cityPhoto.l || 'free licence'));
+  if (scenePhotoNow) rows.push('Sky photo: ' + scenePhotoNow.a + ' — ' + scenePhotoNow.l);
+  el.innerHTML = rows.map(r => '<span>' + esc(r) + '</span>').join('');
+}
+/* One photo layer, one image: the city wins, the sky is the fallback. A scrim
+   is baked into the background so white text keeps the contrast it has today. */
+function showPhoto(src, day, cov) {
+  const el = $('#photo');
+  if (!el) return;
+  if (!src) { photoToken++; el.classList.remove('on'); el.style.backgroundImage = 'none'; return; }
+  const token = ++photoToken;
+  const img = new Image();
+  img.decoding = 'async';
+  img.onload = () => {
+    if (token !== photoToken) return;
+    const scrim = day ? 'rgba(6,8,16,.42),rgba(6,8,16,.60)' : 'rgba(4,6,14,.58),rgba(4,6,14,.74)';
+    el.style.backgroundImage = 'linear-gradient(180deg,' + scrim + '),url("' + src + '")';
+    el.style.opacity = String(Math.min(.74, (day ? .40 : .30) + (day ? .26 : .18) * cov));
+    el.classList.add('on');
+  };
+  img.onerror = () => { if (token === photoToken) { el.classList.remove('on'); el.style.backgroundImage = 'none'; } };
+  img.src = src;
+}
+async function commonsCityPhoto(term, signal) {
+  const q = new URLSearchParams({
+    action: 'query', format: 'json', origin: '*', generator: 'search',
+    gsrsearch: term + ' filetype:bitmap', gsrnamespace: '6', gsrlimit: '10',
+    prop: 'imageinfo', iiprop: 'url|size|extmetadata', iiurlwidth: '1280'
+  });
+  const r = await fetch(COMMONS_API + '?' + q.toString(), { signal, headers: { Accept: 'application/json' } });
+  if (!r.ok) throw new Error('HTTP ' + r.status);      // busy or blocked: not "there is no photo"
+  const j = await r.json();
+  const pages = (j && j.query && j.query.pages) ? Object.keys(j.query.pages).map(k => j.query.pages[k]) : [];
+  pages.sort((x, y) => (x.index || 0) - (y.index || 0));      // search rank, best first
+  for (const pg of pages) {
+    const ii = (pg.imageinfo || [])[0];
+    if (!ii) continue;
+    const em = ii.extmetadata || {};
+    const lic = stripTags((em.LicenseShortName || {}).value);
+    const artist = stripTags((em.Artist || {}).value) || 'Wikimedia Commons';
+    const url = ii.thumburl || ii.url;
+    if (!url || !lic || !PHOTO_OK_LICENCE.test(lic)) continue;  // no licence / fair use: not ours to show
+    if ((ii.width || 0) < 900 || (ii.height || 0) < 600) continue;
+    return { u: url.slice(0, 400), a: artist.slice(0, 60), l: lic.slice(0, 24),
+             t: stripTags(pg.title).replace(/^File:\s*/, '').slice(0, 80), p: (ii.descriptionurl || '').slice(0, 200) };
+  }
+  return null;
+}
+function fetchCityPhoto(p, key) {
+  const term = (p && typeof p.name === 'string') ? p.name.trim() : '';
+  if (!term || /^my location$/i.test(term)) return;          // nothing to look up
+  const seq = ++photoSeq;
+  if (photoCtl) photoCtl.abort();
+  const ctl = new AbortController();
+  photoCtl = ctl;
+  (async () => {
+    let r = null, failed = false;
+    try { r = await commonsCityPhoto(term + ' skyline', ctl.signal); } catch (e) { failed = true; }
+    if (!r && !failed && !ctl.signal.aborted) {
+      try { r = await commonsCityPhoto(term, ctl.signal); } catch (e) { failed = true; }
+    }
+    if (seq !== photoSeq || ctl.signal.aborted) return;       // a newer city won
+    /* A lookup that could not be made is not a city without photos. Caching it
+       as "none" would keep the backdrop empty for three weeks after one launch
+       in a tunnel, so only a lookup that actually answered is remembered. */
+    if (!r && failed) return;
+    photoStore[key] = r ? Object.assign({ at: Date.now() }, r) : { none: 1, at: Date.now() };
+    savePhotos();
+    if (r && places[cur] && photoKeyFor(places[cur]) === key) {
+      cityPhoto = photoStore[key];
+      showPhoto(cityPhoto.u, photoCtx.day, photoCtx.cov);
+      paintCredit();
+    }
+  })();
+}
+/* Called by every render: shows the cached city photo, or the sky for this
+   weather, and (when the city has not been looked up recently) starts one
+   lookup that swaps the photo in when it lands. */
+function applyPhoto(p, w, cond, day) {
+  const cc = (w && w.current && typeof w.current.cloud_cover === 'number' && isFinite(w.current.cloud_cover))
+    ? Math.max(0, Math.min(100, w.current.cloud_cover)) : null;
+  const cov = cc === null ? .5 : cc / 100;
+  photoCtx.day = !!day; photoCtx.cov = cov;
+  scenePhotoNow = SCENE_PHOTOS[SCENES[cond] ? cond : 'cloud'] || null;
+  const key = photoKeyFor(p);
+  const hit = key ? photoStore[key] : null;
+  const fresh = hit && (Date.now() - (+hit.at || 0) < PHOTO_TTL);
+  if (fresh && hit.u) {
+    cityPhoto = hit;
+    showPhoto(hit.u, day, cov);
+  } else {
+    cityPhoto = null;
+    showPhoto(scenePhotoNow ? scenePhotoNow.u : '', day, cov);
+    if (key && !(fresh && hit.none)) fetchCityPhoto(p, key);
+  }
+  paintCredit();
+}
 
 /* ---------- WMO weather codes ---------- */
 const WMO = {
@@ -608,7 +799,7 @@ try {
 } catch (e) {}
 
 /* ---------- apply a scene ---------- */
-function scene(cond, isDay) {
+function scene(cond, isDay, cover) {
   const key = SCENES[cond] ? cond : 'cloud';
   const s = SCENES[key];
   const day = !!isDay;
@@ -616,7 +807,13 @@ function scene(cond, isDay) {
   document.querySelectorAll('.bg').forEach(b => b.classList.toggle('on', b.id === 'bg-' + (day ? 'd-' : 'n-') + key));
   document.documentElement.style.setProperty('--cc', day ? s.cc : s.ncc);
   cloudHost.style.opacity = day ? s.co : s.nco;
-  const n = day ? s.n : s.nn;
+  /* How many drifting clouds are on screen is now the real cloud cover the
+     forecast reports for this city (0–100%), scaled around the scene's own
+     count so an overcast sky still looks overcast and a clear one is bare.
+     A payload without a usable `cloud_cover` keeps the old fixed count. */
+  const base = day ? s.n : s.nn;
+  const cov = (typeof cover === 'number' && isFinite(cover)) ? Math.max(0, Math.min(100, cover)) / 100 : null;
+  const n = cov === null ? base : Math.max(0, Math.min(9, Math.round(base * (0.35 + 0.75 * cov))));
   document.querySelectorAll('.cloud').forEach(c => c.style.opacity = +c.dataset.i < n ? 1 : 0);
   const orb = day ? s.orb : s.norb;
   $('#sun').style.opacity = orb === 'sun' ? (key === 'cloud' ? .55 : 1) : 0;
@@ -761,6 +958,7 @@ function pruneCache() {
   const keep = new Set(places.map(p => p.id));
   for (const k of Object.keys(cache)) if (!keep.has(k)) delete cache[k];
   for (const k of Object.keys(preFail)) if (!keep.has(k)) delete preFail[k];
+  prunePhotos();                            // a deleted city's photo record goes with its row
 }
 function prefetchForecast(p, ctl) {
   const key = p.id || (p.lat + ',' + p.lon);
@@ -1029,8 +1227,22 @@ function hourIndex(w) {
   const times = (w.hourly && Array.isArray(w.hourly.time)) ? w.hourly.time : [];
   if (!times.length) return 0;
   const now = (w.current && typeof w.current.time === 'string') ? w.current.time : '';
-  const h = now.length >= 13 ? now.slice(0, 13) + ':00' : '';
+  let h = now.length >= 13 ? now.slice(0, 13) + ':00' : '';
   if (!h) return 0;                           // no usable clock in the payload
+  /* The payload's clock is only the reader's clock while the payload is fresh.
+     A payload cached at 23:55 and still on screen at 00:05 (the cache holds ten
+     minutes), or one drawn for as long as the reader leaves an offline app
+     open, kept the strip anchored where it was fetched: the first cell still
+     read "Now" over yesterday's 23:00 while the day rows, the hero's H:/L:, the
+     summary and the UV card had already moved to today — the same midnight the
+     date is corrected for, left uncorrected for the hour. The city's wall clock
+     is adopted when it is later than the payload's, and only when the two
+     clocks agreed on the payload's date when it was fetched, so a wrong device
+     clock is still not trusted and a payload ahead of a backwards-corrected
+     clock keeps its own hour. */
+  const cNow = cityNow(w);
+  const c = cNow ? cNow.slice(0, 13) + ':00' : '';
+  if (c && c > h && w.fetchedDate === now.slice(0, 10)) h = c;
   const i = times.indexOf(h);
   if (i >= 0) return i;
   const n = times.findIndex(t => t >= h);
@@ -1066,11 +1278,60 @@ function hourIndex(w) {
    crossed midnight is corrected, while a device whose clock is wrong by a day
    (which would disagree with the payload from the start) is not trusted with
    the answer, and a fresh payload behaves exactly as before. */
-function cityDate(w) {
+function cityNow(w) {
   const off = (w && typeof w.utc_offset_seconds === 'number' && isFinite(w.utc_offset_seconds)) ? w.utc_offset_seconds : null;
   if (off === null) return '';
   const t = Date.now() + off * 1000;
-  return isFinite(t) ? new Date(t).toISOString().slice(0, 10) : '';
+  return isFinite(t) ? new Date(t).toISOString() : '';
+}
+const cityDate = w => cityNow(w).slice(0, 10);
+
+/* ---------- the city's own clock, sunrise and sunset ----------
+   "Real sunset" needs three things the app did not have: a wall clock in the
+   city's timezone, the sunrise/sunset the payload already carries for today's
+   row, and one rule for which of the two clocks to believe.
+   The city's clock is the payload's own `utc_offset_seconds` applied to the
+   device's UTC clock — the reference `cityDate()` is already corrected from —
+   and it is used only while the two clocks agree on the payload's date, so a
+   device whose clock is wrong is not trusted with the answer. When the payload
+   carries no usable sunrise/sunset (an older cache, a trimmed response) the
+   payload's own `is_day` flag is used, which is what the app showed before. */
+const clock = iso => {
+  if (typeof iso !== 'string' || iso.length < 16) return '';
+  const h = +iso.slice(11, 13), m = iso.slice(14, 16);
+  if (!isFinite(h) || !/^\d{2}$/.test(m)) return '';
+  return (h % 12 || 12) + ':' + m + ' ' + (h >= 12 ? 'PM' : 'AM');
+};
+function cityClock(w) {                       // HH:MM in the city's timezone, or ''
+  const c = (w && w.current) || {};
+  const now = (typeof c.time === 'string' && c.time.length >= 16) ? c.time.slice(11, 16) : '';
+  const iso = cityNow(w);
+  if (!iso || !now) return now;
+  if (w.fetchedDate !== c.time.slice(0, 10)) return now;   // clocks disagreed at fetch: trust the payload
+  return iso.slice(0, 10) >= c.time.slice(0, 10) ? iso.slice(11, 16) : now;
+}
+function sunTimes(w) {
+  const d = (w && w.daily) || {};
+  const ti = todayIndex(w);
+  return {
+    rise: Array.isArray(d.sunrise) ? clock(d.sunrise[ti]) : '',
+    set:  Array.isArray(d.sunset)  ? clock(d.sunset[ti])  : ''
+  };
+}
+function isDayNow(w) {
+  const c = (w && w.current) || {};
+  const d = (w && w.daily) || {};
+  const ti = todayIndex(w);
+  const rise = Array.isArray(d.sunrise) ? d.sunrise[ti] : null;
+  const set = Array.isArray(d.sunset) ? d.sunset[ti] : null;
+  const t = cityClock(w);
+  if (t && typeof rise === 'string' && typeof set === 'string' && rise.length >= 16 && set.length >= 16) {
+    const rt = rise.slice(11, 16), st = set.slice(11, 16);
+    if (/^\d{2}:\d{2}$/.test(rt) && /^\d{2}:\d{2}$/.test(st) && rt !== st) {
+      return st > rt ? (t >= rt && t < st) : (t >= rt || t < st);   // the second form covers a polar day/night pair
+    }
+  }
+  return c.is_day === 1;
 }
 function todayIndex(w) {
   const now = (w.current && typeof w.current.time === 'string') ? w.current.time.slice(0, 10) : '';
@@ -1091,7 +1352,7 @@ function summarise(w, cond, code) {
   const ti = todayIndex(w);
   const hi = Math.round(d.temperature_2m_max[ti]), lo = Math.round(d.temperature_2m_min[ti]);
   const pop = (w.hourly.precipitation_probability || [])[hourIndex(w)];
-  const day = c.is_day === 1;
+  const day = isDayNow(w);              // same reference the scene and the icons use
   /* The cloudy sentence was picked with a two-way test, `code === 3 ? overcast
      : partly cloudy`, so every code that is not exactly 3 got "Partly cloudy
      with a few sunny spells" — including the codes the WMO table does not know,
@@ -1213,13 +1474,14 @@ const esc = s => String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;'
 function render(p, w) {
   const c = w.current, h = w.hourly, d = w.daily;
   const [desc, cond] = codeInfo(c.weather_code);
-  const isDay = c.is_day === 1;
-  scene(cond, isDay);
+  const isDay = isDayNow(w);            // the city's own sunrise/sunset, not a fixed hour
+  scene(cond, isDay, c.cloud_cover);
 
   const ti = todayIndex(w);
   const today = d.time[ti];
   const hiToday = Math.round(d.temperature_2m_max[ti]);
   const loToday = Math.round(d.temperature_2m_min[ti]);
+  const sun = sunTimes(w);              // the city's real sunrise and sunset today
 
   /* hourly — next 8 hours from now */
   const hi0 = hourIndex(w);
@@ -1261,7 +1523,7 @@ function render(p, w) {
   $('#main').innerHTML = `<div class="page${anim ? ' enter' : ''}">
   <div class="bar"><button class="loc" id="openSearch" title="Change city"><span>📍 ${esc(p.name)}${p.sub ? ', ' + esc(p.sub) : ''}</span></button><span class="ub"><button class="u glass" id="unit">°${F ? 'F' : 'C'}</button></span></div>
   <div class="hero"><h1>${esc(p.name)}</h1><div class="temp">${T(c.temperature_2m)}°</div><div class="cond">${esc(desc)}</div><div class="hl">H:${T(hiToday)}°  L:${T(loToday)}°</div></div>
-  <div class="card glass"><div class="sum">${esc(summarise(w, cond, c.weather_code))}</div></div>
+  <div class="card glass"><div class="sum">${esc(summarise(w, cond, c.weather_code))}${sun.rise && sun.set ? `<div class="sunline">🌅 Sunrise ${sun.rise} · 🌇 Sunset ${sun.set}</div>` : ''}</div></div>
   <div class="card glass"><div class="lbl">🕐 Hourly forecast</div><div class="hrs">${hours}</div></div>
   <div class="card glass"><div class="lbl">📅 7-day forecast</div>${days}</div>
   <div class="grid">
@@ -1276,6 +1538,7 @@ function render(p, w) {
   bindUnit();
   $('#openSearch').onclick = openSheet;
   if (anim) prepEnter();
+  applyPhoto(p, w, cond, isDay);
   applyHeldFocus();
 }
 function prepEnter() {
@@ -2056,6 +2319,7 @@ let setReturnFocus = null;
 function openSettings() {
   tab = 'set'; nav();
   paintSettings();
+  paintCredit();                       // the panel names whoever's photo is on screen
   if (document.activeElement && document.activeElement !== document.body) setReturnFocus = document.activeElement;
   setEl.removeAttribute('inert');
   setEl.classList.add('open'); scrim.classList.add('open');

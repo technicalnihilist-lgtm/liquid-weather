@@ -1799,6 +1799,84 @@ one more, found on the day's last pass.
   at the display's refresh rate rather than a capped 60 Hz (capping it would slow
   the rain on a 120 Hz screen, which the freeze forbids).
 
+## [1.7] — 2026-11-07
+
+### Added
+- **Real photo backdrop from Wikimedia Commons.** Behind the glass there is now
+  a real photograph: the city you are looking at when Commons has a freely
+  licensed one for it, otherwise a CC-licensed sky for the weather on screen
+  (partly cloudy, fog/overcast, rain, thunderstorm, snow). The city is looked up
+  by name through the Commons API, the picture comes from `upload.wikimedia.org`,
+  and the choice is remembered on the phone for three weeks so it is not looked
+  up again. Only free licences are accepted (CC0, CC BY, CC BY-SA, public
+  domain) — a file Commons marks as fair use is skipped — and a lookup that
+  could not be made (no network, 5xx, timeout) is never cached as "no photo",
+  so one launch in a tunnel does not leave the backdrop empty for three weeks.
+- **Photo credits in *Glass & motion*.** A *Photos* block names the source
+  (Wikimedia Commons) and, for whichever picture is on screen, the author and
+  the licence — the attribution the CC BY / CC BY-SA files require. It follows
+  the city and the weather as they change.
+- **Real clouds.** The number of drifting clouds is now the cloud cover the
+  forecast reports for that city (0–100%), scaled around each scene's own count,
+  so an overcast sky still reads as overcast and a clear one is bare. A payload
+  without a usable `cloud_cover` keeps the old fixed count.
+- **Real sunset (and sunrise).** The day/night scene, the hero and the summary
+  now switch at the city's own sunrise and sunset rather than at a fixed hour,
+  and the summary card shows today's real times ("Sunrise 6:30 AM · Sunset
+  6:04 PM"). The city's wall clock is the payload's `utc_offset_seconds` applied
+  to the device's UTC clock, used only while the two clocks agree on the
+  payload's date, so a device with a wrong clock still gets the payload's own
+  `is_day`; a payload without sunrise/sunset also falls back to `is_day`, which
+  is what every earlier version showed.
+
+### Fixed
+- **The hourly strip stayed on the payload's clock, so its "Now" cell drifted
+  away from the rest of the screen.** `hourIndex()` anchored the eight cells at
+  the hour the forecast was fetched at, while the day rows, the hero's H:/L:,
+  the summary and the UV card are matched against the city's own date. A payload
+  cached at 23:55 and still drawn at 00:05 showed a first cell reading "Now"
+  over yesterday's 23:00 beside a "Today" row that was already today, and an app
+  left open offline for three hours showed "Now" over a three-hour-old hour and
+  temperature. The strip now adopts the city's wall clock when that hour is
+  later than the payload's, under the same trust rule as the date.
+
+### Notes
+- **This release breaks the maintenance programme's UI freeze on purpose** — it
+  adds a photo layer, a sunrise/sunset line and a credits block, which the
+  scheduled passes were not allowed to do. The pass-level rule (bug, crash,
+  performance and correctness fixes only) resumes with the next scheduled pass;
+  nothing else in the layout, spacing, colours, typography, gradients, glass
+  values or animation timings was touched.
+- Verified in headless Chromium (mocked Open-Meteo and Commons): the photo layer
+  fades in with the city photo and the credit block names its author and
+  licence; with no Commons match the scene's sky photo takes over and the credit
+  lists only that; a 404 on the image, a fully offline launch and an empty
+  Commons answer each leave the layer invisible with no page errors — the app
+  renders exactly as 1.6.3 does. Day/night follows the payload's own sunrise and
+  sunset: at 17:50 the scene is `bg-d-cloud`, at 18:10 (sunset 18:04) it is
+  `bg-n-cloud`. An older payload without `sunrise`/`sunset`/`cloud_cover` renders
+  with no sun line and the scene's fixed cloud count. The midnight case still
+  behaves: at 00:10 the strip reads `Now=0°` with "Today" on the new row. A
+  stored photo record is used without any Commons request. An 80-action random
+  pass (tabs, sliders, searches, removals, unit toggle, nav drags, reset) reports
+  zero console errors and zero page errors.
+- Caught before shipping: the photo store is read at load time, and its first
+  version called `toNum()` — a `const` declared further down — so the whole boot
+  threw `Cannot access 'toNum' before initialization` and the app opened blank.
+  The parse is now local to `cleanPhoto()`.
+- `node --check` is clean on the extracted script and the APK's own bundled
+  `assets/index.html` loads with zero console errors.
+- `versionCode 39` / `versionName 1.7` in `AndroidManifest.xml` and `build.sh`
+  (up from 37 / 1.6.3), same signing key — certificate SHA-256 `2035d69f…9e3b8b`,
+  unchanged, and the APK verifies against v1, v2 and v3 schemes.
+  `android/assets/index.html` is byte-identical to `web/index.html` (SHA-256
+  `1951e6e5…`) and so is the copy inside the rebuilt APK. `CHECKSUMS.txt` points
+  at the new build (`f8a52080…`).
+- `PRIVACY.md`, `README.md` and `STORE.md` now name Wikimedia Commons and
+  `upload.wikimedia.org` as network endpoints, say that only the city name is
+  sent (never coordinates, and never for "My Location"), and list each sky
+  photo's author and licence.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

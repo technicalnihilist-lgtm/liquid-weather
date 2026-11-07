@@ -30,7 +30,7 @@ Verify your download if you like — the SHA-256 is in [`CHECKSUMS.txt`](CHECKSU
 
 ```bash
 sha256sum LiquidWeather.apk
-# 77a4367f4d53a7a9f3effcc4a567f8d7e1d6aa3c578ea4218c64e74057d30866
+# f8a52080f036b27e78b7d45224e0dcf0e986b8b9e4d15a0867078b878d00214c
 ```
 
 ---
@@ -46,6 +46,8 @@ sha256sum LiquidWeather.apk
 - **Glass & motion settings** — tune transparency, blur and bounce to taste, with a reset. Your choices persist.
 - **Draggable pill navigation** with Weather / Cities / Glass tabs.
 - **4D depth & parallax** — sky, clouds, particles, cards and nav sit at different depths and follow your tilt, finger and scrolling. Tune it with the **Depth** and **Parallax** sliders.
+- **Real photo backdrop** — a real photograph of the city you are looking at, from **Wikimedia Commons**, behind the glass; when Commons has no freely licensed photo for that place, a CC-licensed sky for the weather on screen takes its place. Every photo is credited in *Glass & motion*. Only free licences (CC0 / CC BY / CC BY-SA / public domain) are ever used.
+- **Real clouds, real sunset** — the number of drifting clouds follows the cloud cover the forecast reports for that city, and the scene switches from day to night at that city's own sunrise and sunset, whose times are shown in the summary card.
 - **The design is intact** — same glass cards, drifting blurred clouds, sun/moon orbs, rain/snow particles, lightning flashes and pill navigation. Conditions now drive the scene, and night gets its own darker palette per condition.
 
 Auto-refreshes every 10 minutes and whenever you come back to the app. Tap the city name (or the Cities tab) to change place.
@@ -56,7 +58,8 @@ Auto-refreshes every 10 minutes and whenever you come back to the app. Tap the c
 
 - **Location never leaves your device** as anything but a latitude/longitude pair in the weather request. Nothing is stored on a server.
 - Saved places and your °C/°F choice live in local storage on the phone.
-- No analytics, no ad SDKs, no accounts, no third-party trackers in the APK — you can check: the only network calls in the source are to the weather and geocoding APIs listed below.
+- No analytics, no ad SDKs, no accounts, no third-party trackers in the APK — you can check: the only network calls in the source are to the weather, geocoding and photo APIs listed below.
+- The photo backdrop sends the **city name** (never your coordinates) to Wikimedia Commons to look up a licensed photo, and the picture itself is downloaded from `upload.wikimedia.org`. The result is remembered on the phone for three weeks. No photo lookup is made for "My Location".
 
 Permissions used, and why:
 
@@ -70,6 +73,16 @@ Permissions used, and why:
 ## 🌐 Data
 
 Forecasts and city search come from **[Open-Meteo](https://open-meteo.com/)** — free, open, and no API key required. Reverse geocoding (turning coordinates into a city name) uses BigDataCloud's public endpoint, with OpenStreetMap Nominatim as a fallback.
+
+Photos come from **[Wikimedia Commons](https://commons.wikimedia.org/)** — the city backdrop is looked up by name through the Commons API, and both it and the weather skies are downloaded from `upload.wikimedia.org`. Only freely licensed files are used, and each one is credited by author and licence inside the app (*Glass & motion → Photos*). The five weather skies are:
+
+| Weather | File | Author | Licence |
+|---|---|---|---|
+| Partly cloudy | Cirrus-cumulus clouds in the sky 2 | Rise DHMN | CC BY 4.0 |
+| Fog / overcast | Stratus cloud near Mithapukur, Rangpur (1) | Muntashir.islam | CC BY-SA 4.0 |
+| Rain | Storm clouds coming in over Gåseberg 2 | W.carter | CC0 |
+| Thunderstorm | Cloudscape santhosh | Santhoshj | CC BY 3.0 |
+| Snow | Shaheed Island, Andaman Sea, Overcast sky | Vyacheslav Argenberg | CC BY 4.0 |
 
 ---
 

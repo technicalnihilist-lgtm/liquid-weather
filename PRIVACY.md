@@ -1,6 +1,6 @@
 # Privacy Policy — Liquid Weather
 
-_Last updated: 2 November 2026_
+_Last updated: 7 November 2026_
 
 Liquid Weather is built to work without an account, without ads and without tracking. This page explains,
 in plain language, what the app does with your data.
@@ -14,6 +14,13 @@ build a profile of you.
 ## Network access
 
 The app needs internet access to show forecasts. Weather data and city search results are fetched from Open-Meteo (open-meteo.com), a free public weather API that needs no account or API key. The city name you search for may be sent to that service. Your location is used only if you explicitly allow it. No account data, device identifiers or usage analytics are sent by this app.
+
+Two more services are used for the photo backdrop (version 1.7 and later):
+
+- **Wikimedia Commons** (commons.wikimedia.org) is asked for a freely licensed photo of the city you are viewing. Only the **city name** is sent — never your coordinates, and never for the "My Location" row.
+- **upload.wikimedia.org** serves the picture itself.
+
+The result is remembered on your device for three weeks so the lookup is not repeated. Both requests carry no identifier beyond what any web request carries, and each photo's author and licence are shown inside the app under *Glass & motion → Photos*.
 
 ## What is stored, and where
 
