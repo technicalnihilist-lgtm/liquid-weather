@@ -2027,11 +2027,25 @@ async function remoteSearch(term, signal) {
   } catch (e) { return []; }
 }
 
+/* Two rows a reader cannot tell apart are one row. samePlace() keeps cities
+   apart by distance on purpose — that is what stops Portland, Maine and
+   Portland, Oregon being merged — but it left the fallback geocoder's answer
+   to a city query listed twice: Nominatim returns the settlement and then the
+   region that carries the same name, and both map to the same name and the
+   same subtitle. "sao paulo" gave "São Paulo, Região Sudeste, Brasil" at
+   -23.55 (the city) and, 160 km inland at -22.07, the state's centroid under
+   the identical label: two rows nobody could tell apart, and the second one
+   showed the weather of open country under the city's name. The best-ranked
+   row — the one the geocoder meant — is the one kept. */
+const sameLabel = (a, b) => {
+  const na = fold(a.name || ''), nb = fold(b.name || '');
+  return !!na && na === nb && fold(a.sub || '') === fold(b.sub || '');
+};
 function dedupe(list) {
   /* Same rule as the saved list: a geocoder that returns one city under two
      near-by coordinate sets (city and district rows) listed it twice. */
   const out = [];
-  for (const o of list) if (!out.some(k => samePlace(k, o))) out.push(o);
+  for (const o of list) if (!out.some(k => samePlace(k, o) || sameLabel(k, o))) out.push(o);
   return out;
 }
 

@@ -1932,6 +1932,58 @@ one more, found on the day's last pass.
   in 1.6.1, nothing reachable through the UI comes near the quota, and any
   message about it would add wording the freeze forbids).
 
+## [1.7.2] — 2026-11-08
+
+### Fixed
+- **A search answered by the fallback geocoder could list the same row twice.**
+  When Open-Meteo's geocoder is unreachable or rate-limited, `remoteSearch()`
+  asks Nominatim, and Nominatim answers a city query with the settlement *and*
+  with the region that carries the same name — both mapped to the same name and
+  the same subtitle. `dedupe()` keys rows with `samePlace()`, which merges two
+  rows only within 25 km (deliberately: that is what keeps Portland, Maine and
+  Portland, Oregon apart), so the pair survived and the sheet showed two rows a
+  reader could not tell apart: **"sao paulo"** listed "São Paulo, Região
+  Sudeste, Brasil" at -23.55 (the city) and, 160 km inland at -22.07, the state
+  of São Paulo's centroid under the identical label — picking the second one
+  saved a city named São Paulo and showed the weather of open country. Two rows
+  with the same folded name *and* the same folded subtitle are now one row, and
+  the best-ranked one — the one the geocoder meant — is the one kept.
+
+### Notes
+- No visual change: the `<style>` block is untouched, and with a fixed payload
+  the rendered `#main` markup is byte-identical to 1.7.1 (3,241 characters, 229
+  nodes), as are the computed radius, blur, colour, size, padding, shadow and
+  gradient of the bar, the hero, the nav, the selected tab, the pill, the toast
+  and a glass card, the six settings variables, and the whole Popular list the
+  sheet paints when it opens.
+- Measured on 1.7.1 first, in headless Chromium with the fallback geocoder
+  answering Nominatim's real payload for the query: 1.7.1 rendered 3 result rows
+  for "sao paulo", the first two identical apart from the 160 km between them;
+  1.7.2 renders 2 (the city, and the genuine "São Paulo, Capanema, Pará").
+  The rule does not touch rows that merely share a name: "springfield" still
+  renders all 8 (Illinois, Massachusetts, Missouri, Ohio, Oregon, Vermont,
+  Kentucky, Georgia), and rows that differ only in their subtitle — "Bogotá
+  ciudad, Bogotá, Distrito Capital" against "Bogota, Bergen County, New Jersey"
+  — are still both listed. A query with no answer still ends on "No place
+  called …", and an empty geocoder payload still falls back to the bundled list.
+- `node --check` is clean on the extracted script; a headless load and a
+  10-query pass over the sheet (including a geocoder answering with HTML in a
+  name, string coordinates, missing coordinates, out-of-range coordinates and
+  duplicate rows) report zero console errors and zero page errors.
+- `versionCode 41` / `versionName 1.7.2` in `AndroidManifest.xml` and `build.sh`
+  (up from 40 / 1.7.1), same signing key — certificate SHA-256 `2035d69f…9e3b8b`,
+  unchanged, and the APK verifies against v1, v2 and v3 schemes.
+  `android/assets/index.html` is byte-identical to `web/index.html` (SHA-256
+  `75a223ea…`) and so is the copy inside the rebuilt APK. `CHECKSUMS.txt` points
+  at the new build (`910bb187…`).
+- Left alone deliberately: rows that are not settlements at all — a county, a
+  river, an airport, a state — still come through, because the geocoder returns
+  them in its own relevance order and a state is a legitimate pick ("Goa" is
+  one); dropping them would be a behaviour change, not a bug fix. Also left:
+  the Popular row "Delhi" is recognised as the saved "New Delhi" (identical
+  coordinates), so its ✕ removes that row while reading "Remove Delhi" — naming
+  it after the saved row would change visible wording, which the freeze forbids.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
