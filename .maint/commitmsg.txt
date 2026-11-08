@@ -1,0 +1,38 @@
+fix(network): survive a payload with no UV block, and give the photo lookup a deadline
+
+Two failures in this pass's area (network and API robustness), both invisible
+when the network behaves.
+
+1. `daily.uv_index_max` was the one field `render()` indexed without a guard.
+   `usableForecast()` requires every array the cards and the strip read, but not
+   this one, so a 200 payload that arrived without the block (a proxy trimming
+   the body, a field the model stops serving) threw a TypeError halfway through
+   `render()`. `show()` treats a throw from `render()` as a link failure, so a
+   complete forecast was discarded and the reader got the "tap to try again"
+   card - and since the payload was cached before the render, every repaint
+   threw again until it aged out. `uvAt()` now checks the array and an absent
+   one reads as 0, the value the card's own `|| 0` already meant for a missing
+   reading. Both call sites (`summarise()`, `render()`) go through it.
+
+2. `commonsCityPhoto()` had no deadline. Its AbortController is the one
+   `fetchCityPhoto()` creates and only a newer city aborts, so a Commons API
+   that accepted the connection and then went quiet left the fetch pending for
+   minutes: no city photo, no retry, a controller and a radio wake-lock held,
+   and no photoStore record written either way. It now runs on its own 10s
+   deadline, relayed from the caller's signal so a superseded lookup still
+   cancels instantly. A fired deadline takes the existing `failed` path, so a
+   timeout is never cached as "this city has no photo".
+
+Verified in headless Chromium against stubbed geocoders/forecast/Commons: the
+no-UV payload renders the retry card on 1.8 and the full screen on 1.8.1, while
+the complete payload renders byte-identically (#main 3,201 chars, hash
+1883057677); a Commons request that never answers is still pending at 14s on
+1.8 and aborts at 10,000 ms here, and a superseded one aborts at 800 ms.
+`node --check` clean, zero console/page errors on a load and on a 54-action
+pass, APK rebuilt (versionCode 45 / 1.8.1) with the bundled index.html
+byte-identical to the source and the signature verifying on v1/v2/v3.
+
+The APK in this commit was built by the pass's own one-shot CI run from these
+sources, because the maintainer session that made the change had read-only git
+access; the run checked the bundled copy against web/index.html, checked the
+signer against the project key, and wrote CHECKSUMS.txt from the APK it built.
