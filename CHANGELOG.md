@@ -2093,6 +2093,63 @@ one more, found on the day's last pass.
   resolve through the geocoder, and rows that are not settlements — a county, a
   state, a metro area — still come through, as weighed in 1.7.2.
 
+## [1.8] — 2026-11-08
+
+### Fixed
+- **The build's last step printed the signature but never checked it, so
+  a broken — or wrongly signed — APK still left `build.sh` with exit
+  status 0.** The final line was `apksigner verify --print-certs
+  build/LiquidWeather.apk | head -4`. A pipeline reports `head`'s
+  status, so the script's `set -e` never saw apksigner fail: an APK that
+  printed `DOES NOT VERIFY` / `ERROR: Missing META-INF/MANIFEST.MF`
+  finished the build "successfully" and CI uploaded it as the artifact.
+  Nothing compared the signer with this project's key either, so a build
+  made with any other keystore also passed — an APK that cannot install
+  over the released app, which is the one thing "the signing key never
+  changes" exists to prevent. Verification output is now captured to
+  `build/verify.txt`, its exit status is the build's, and the signer's
+  SHA-256 digest is compared with the certificate named in
+  `CHECKSUMS.txt` (`2035d69f…9e3b8b`); anything else fails the build with
+  a message saying not to publish it. `set -e` also gained `-o pipefail`,
+  so a future pipeline cannot reintroduce the same swallowing.
+
+### Notes
+- Measured on 1.7.4 first, against the real toolchain (JDK 17,
+  build-tools 34.0.0, platform 34): the old last line, run on an
+  unsigned APK, printed `DOES NOT VERIFY` and exited 0; run on an APK
+  signed with a throwaway keystore, it printed `CN=Someone Else` and
+  `7e26d7b8…` and exited 0. With the fix those same two builds exit 1 —
+  `ERROR: APK is not signed by the project key` — while the real build
+  still exits 0 and prints the usual certificate.
+- This release carries the whole day: 1.7.2 (a fallback-geocoder row
+  listed twice), 1.7.3 (Bounce dead after switching Reduce motion off),
+  1.7.4 (a coordinate-less geocoder row saved as a place at 0,0) and 1.8
+  (this build gate).
+- No visual change: `web/index.html` is untouched (SHA-256 `c0644ebb…`),
+  and the rebuilt APK's bundled `assets/index.html` is byte-identical to
+  it; a headless Chromium load of the source and of the APK's own copy
+  each render the same 230 nodes and the same 3,215-character `#main`,
+  with zero console errors and zero page errors. `node --check` is clean
+  on the extracted script.
+- `versionCode 44` / `versionName 1.8` in `AndroidManifest.xml` and
+  `build.sh` (up from 43 / 1.7.4), same signing key — certificate
+  SHA-256 `2035d69f…9e3b8b`, unchanged, and the APK verifies against v1,
+  v2 and v3 schemes. `android/assets/index.html` is byte-identical to
+  `web/index.html`, and so is the copy inside the rebuilt APK.
+  `CHECKSUMS.txt` points at the new build (`e98c4a3e…`).
+- Left alone deliberately: `build.sh` still passes `--version-code 43
+  --version-name 1.7.4 --min-sdk-version 23 --target-sdk-version 34`,
+  which duplicate the manifest. Bumping only the manifest to 44 / 1.8 was
+  measured to produce an APK reporting 44 / 1.8, so aapt2 takes the
+  manifest's values and the flags are inert duplication — not the drift
+  bug they look like, so they were left rather than "fixed" for churn.
+  Also left: the script still mints a fresh keystore when
+  `android/release.keystore` is missing (the new certificate check now
+  stops such a build at the end instead of letting it ship), and there is
+  still no build-time comparison of `android/assets/index.html` with
+  `web/index.html` — the two are identical today, and adding that guard
+  is a change of policy rather than a fix.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
