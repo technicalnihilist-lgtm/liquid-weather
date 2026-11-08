@@ -391,7 +391,28 @@ function showPhoto(src, day, cov) {
   img.onerror = () => { if (token === photoToken) { el.classList.remove('on'); el.style.backgroundImage = 'none'; } };
   img.src = src;
 }
+/* Every other request in the app runs against a deadline; this one had none.
+   Its AbortController is the one fetchCityPhoto() creates, and only a newer city
+   aborts it, so a Commons API that accepted the connection and then went quiet
+   left the fetch pending for minutes: no city photo, no retry, a controller and
+   a radio wake-lock held, and no photoStore record written either way. A
+   deadline that fires is a lookup that could not be made, not a city without
+   photos, so it takes the `failed` path fetchCityPhoto() already has for an
+   HTTP error and nothing is cached. */
+const COMMONS_TIMEOUT = 10000;
 async function commonsCityPhoto(term, signal) {
+  const ctl = new AbortController();
+  const id = setTimeout(() => ctl.abort(), COMMONS_TIMEOUT);
+  const relay = () => ctl.abort();
+  if (signal) {
+    if (signal.aborted) ctl.abort();
+    else signal.addEventListener('abort', relay, { once: true });
+  }
+  try { return await commonsCityPhotoWith(term, ctl.signal); }
+  finally { clearTimeout(id); if (signal) signal.removeEventListener('abort', relay); }
+}
+async function commonsCityPhotoWith(term, signal) {
+
   const q = new URLSearchParams({
     action: 'query', format: 'json', origin: '*', generator: 'search',
     gsrsearch: term + ' filetype:bitmap', gsrnamespace: '6', gsrlimit: '10',
@@ -1382,6 +1403,19 @@ function isDayNow(w) {
   }
   return c.is_day === 1;
 }
+/* `daily.uv_index_max` was the one daily field the renderer indexed without a
+   guard: `usableForecast()` requires every array the cards and the strip read,
+   but not this one, so a 200 payload that arrived without the block threw a
+   TypeError inside render() — which show() catches as a link failure, so a
+   complete forecast was discarded and the retry card took its place, and
+   because the payload had already been cached every repaint threw again. The
+   `|| 0` the UV card already carried is the intended reading for a missing
+   value, so an absent array now reads as 0 there and in summarise(). */
+const uvAt = (d, ti) => {
+  const a = (d && Array.isArray(d.uv_index_max)) ? d.uv_index_max : null;
+  const v = a ? +a[ti] : NaN;
+  return isFinite(v) ? v : 0;
+};
 function todayIndex(w) {
   const now = (w.current && typeof w.current.time === 'string') ? w.current.time.slice(0, 10) : '';
   const times = (w.daily && Array.isArray(w.daily.time)) ? w.daily.time : [];
@@ -1450,7 +1484,7 @@ function summarise(w, cond, code) {
   else if (cond === 'snow') parts.push('Roads may be slippery — allow extra travel time.');
   else if (cond === 'fog') parts.push('Drive with headlights on and leave extra space.');
   else if (cond === 'sun' && !day) parts.push('Light winds and no rain expected overnight.');
-  else if (cond === 'sun' && (+d.uv_index_max[ti] || 0) >= 8) parts.push('UV is very high — sunscreen and shade around midday.');
+  else if (cond === 'sun' && uvAt(d, ti) >= 8) parts.push('UV is very high — sunscreen and shade around midday.');
   else if (cond === 'sun') parts.push('A good day to be outside.');
   parts.push(`High of ${T(hi)}° and a low of ${T(lo)}°.`);
   return parts.join(' ');
@@ -1553,7 +1587,7 @@ function render(p, w) {
       `<small>${T(hi)}°</small></div>`;
   }).join('');
 
-  const uv = +(d.uv_index_max[ti] || 0);
+  const uv = uvAt(d, ti);
   const uvT = uv >= 11 ? 'Extreme' : uv >= 8 ? 'Very high' : uv >= 6 ? 'High' : uv >= 3 ? 'Moderate' : 'Low';
   const gust = Math.round(c.wind_gusts_10m);
   const wind = Math.round(c.wind_speed_10m);
