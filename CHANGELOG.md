@@ -2045,6 +2045,54 @@ one more, found on the day's last pass.
   photo layer still builds a fresh `Image` on every render — measured at 0.035 ms
   on a picture the browser has already decoded, so there is nothing there to fix.
 
+## [1.7.4] — 2026-11-08
+
+### Fixed
+- **A geocoder row that carries no coordinates could still be listed, saved and
+  shown as a place at 0°N 0°E.** `remoteSearch()` normalised both services'
+  answers with a bare unary plus — `lat: +r.latitude` for Open-Meteo,
+  `lat: +r.lat` for the Nominatim fallback — and `+null`, `+''` and `+false` are
+  all the number `0`. `usableResult()` then saw two finite numbers inside range
+  and kept the row, so a row with a name and no position arrived in the sheet as
+  an ordinary result: it listed "Pune, Maharashtra, India" at 0,0, tapping it
+  saved a city whose coordinates are in the Gulf of Guinea, and the app fetched
+  and displayed *that* forecast under the city's name. Two such rows also landed
+  on the same point, where `pid()` merged them, so a second city vanished from
+  the results altogether. Coordinates now go through `toNum()`, which answers
+  `NaN` for anything that is not a number or a non-empty numeric string —
+  exactly what `usableResult()` already rejects — and passes a real coordinate,
+  numeric or numeric-string (Nominatim's shape), through untouched.
+
+### Notes
+- No visual change: the `<style>` block is untouched, and the Popular list the
+  sheet paints on open and the rendered `#main` markup hash identically to
+  1.7.3 (`08009f482561` and `2434ed77a049`, same viewport, same payload).
+- Measured on 1.7.3 first, in headless Chromium, with a geocoder answering one
+  honest row plus rows whose coordinates are `null`, `""`, `true/false` and a
+  numeric string: 1.7.3 listed 4 rows — "Pune" at 0,0 and "Surat" at 1,0 among
+  them — and tapping "Pune" saved `0,0` and put "Pune" on the hero over the
+  wrong forecast; 1.7.4 lists the 2 honest rows (the number and the
+  numeric-string one), and the phantom row is not there to tap.
+- No regression on real payloads: 24 live Nominatim answers (sao paulo,
+  springfield, san jose, victoria, richmond, portland, cambridge, male and the
+  rest) render the same 105 rows before and after, row for row.
+- `node --check` is clean on the extracted script; a headless load of
+  `web/index.html` and one of the APK's own bundled `assets/index.html` report
+  zero console errors and zero page errors.
+- `versionCode 43` / `versionName 1.7.4` in `AndroidManifest.xml` and `build.sh`
+  (up from 42 / 1.7.3), same signing key — certificate SHA-256 `2035d69f…9e3b8b`,
+  unchanged, and the APK verifies against v1, v2 and v3 schemes.
+  `android/assets/index.html` is byte-identical to `web/index.html` (SHA-256
+  `c0644ebb…`) and so is the copy inside the rebuilt APK. `CHECKSUMS.txt` points
+  at the new build (`f0ace7d1…`).
+- Left alone deliberately: `countryMatches()` still prefix-matches the country
+  label, so "uk" answers with Kyiv (Ukraine) and "turkey" finds nothing in the
+  bundled list (the label is "Türkiye") — both are gaps in the *data*, not in the
+  matching code, and closing them means an alias table, which is new content
+  rather than a fix. Also left: localized names ("münchen", "bombay") only ever
+  resolve through the geocoder, and rows that are not settlements — a county, a
+  state, a metro area — still come through, as weighed in 1.7.2.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

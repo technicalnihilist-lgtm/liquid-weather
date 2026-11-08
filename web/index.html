@@ -2020,8 +2020,18 @@ async function remoteSearch(term, signal) {
       return bits.join(', ');
     };
     const rows = Array.isArray(j.results) ? j.results : [];
+    /* toNum(), not a bare unary +: a row that carries no coordinates at all is
+       meant to be dropped by usableResult(), and a bare + turned the three
+       shapes of "no coordinate" into the number 0 — `+null`, `+''` and
+       `+false` are all 0 — so such a row survived the check as a valid place at
+       0°N 0°E, listed under the city's name and, once tapped, saved and shown
+       with the weather of the Gulf of Guinea. Two junk rows also collided on
+       that one point, so pid() merged them and one city disappeared from the
+       list altogether. toNum() answers NaN for anything that is not a number or
+       a non-empty numeric string, which usableResult() already rejects, and it
+       passes a real coordinate through untouched. */
     const list = rows.filter(r => r && typeof r === 'object').map(r => ({
-      name: r.name, sub: subOf(r), lat: +r.latitude, lon: +r.longitude
+      name: r.name, sub: subOf(r), lat: toNum(r.latitude), lon: toNum(r.longitude)
     })).filter(usableResult);
     if (list.length) return list;
   } catch (e) {}
@@ -2034,7 +2044,7 @@ async function remoteSearch(term, signal) {
     const j = await getJSON('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&q=' + encodeURIComponent(term), 9000, signal);
     return (Array.isArray(j) ? j : []).filter(r => r && typeof r === 'object').map(r => {
       const parts = String(r.display_name || '').split(', ');
-      return { name: parts[0], sub: parts.slice(1, 3).join(', '), lat: +r.lat, lon: +r.lon };
+      return { name: parts[0], sub: parts.slice(1, 3).join(', '), lat: toNum(r.lat), lon: toNum(r.lon) };
     }).filter(usableResult);
   } catch (e) { return []; }
 }
