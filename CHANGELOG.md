@@ -1984,6 +1984,67 @@ one more, found on the day's last pass.
   coordinates), so its ✕ removes that row while reading "Remove Delhi" — naming
   it after the saved row would change visible wording, which the freeze forbids.
 
+## [1.7.3] — 2026-11-08
+
+### Fixed
+- **Switching Reduce motion off while the app was open left the Bounce setting
+  dead until the next launch.** Every spring in the app — the pill lens, the
+  sheets, the cards, the entry animation — is derived in `applySettings()` from
+  the Bounce slider, and that function skipped the springs when the OS asked for
+  reduced motion. It decided that by reading the `prefers-reduced-motion` query
+  **once, at load** (`const noMotion`). A reader whose phone had Reduce motion
+  on when the app started, and who then turned it off, kept the launch-time
+  answer for the rest of the session: `--spring` and `--spring-soft` were never
+  written on `:root`, the stylesheet's default curve was used instead, and
+  moving Bounce — or *Reset to default* — changed nothing on screen. The query is
+  now watched through `motionMQ`, the same object the particle field and the
+  parallax engine already follow, and the springs are re-derived when it
+  changes, so the setting works in both directions. Nothing is written while
+  Reduce motion is on (`applySettings()` still returns before the springs), so a
+  reduced-motion session renders exactly as it did.
+
+### Notes
+- Measured on 1.7.2 first, in headless Chromium with the query emulated: launch
+  with `prefers-reduced-motion: reduce`, set Bounce to 0, then emulate
+  `no-preference`. 1.7.2 left `--spring` unset on `:root`, and Bounce 0 → 100
+  after the switch wrote nothing at all; 1.7.3 adopts `linear(0,0.005,…)`
+  (Bounce 0) the moment the setting flips, and Bounce 100 then writes
+  `linear(0,0.036,…)` — the same values a launch with the setting off produces.
+  The control run, launched with the setting off, is byte-identical before and
+  after.
+- No visual change in any default session: with Reduce motion off, the rendered
+  `#main` markup (2,984 characters), the computed radius, blur, colour, size,
+  padding, shadow and gradient of the bar, the hero, a glass card, the nav and
+  the pill, the photo layer's background and opacity, and the settings variables
+  `--k`, `--glass`, `--blur`, `--dp` and `--pr` are identical to 1.7.2. (`--mx`
+  and `--my` differ between any two runs — before the change as well — because
+  they follow the pointer.)
+- The rest of this pass's area (memory and lifecycle) was re-audited end to end
+  and found clean: 240 random actions (tabs, sliders, sheet, searches, saves,
+  removals, unit toggle, Escape, resize, visibility flips) leave the listener
+  count flat at 38, DOM nodes bounded at 231–283, one interval, at most three
+  pending timers and the JS heap flat at about 1.2 MB; no frame is requested and
+  no timer is armed while the page is hidden; 20 no-op resize events reallocate
+  the particle canvas zero times, a real geometry change and the DPR cap behave
+  as before; and the WebView shell still pauses, resumes, hands back a pending
+  geolocation callback and detaches before destroying.
+- `node --check` is clean on the extracted script; a headless load and the
+  240-action pass report zero console errors and zero page errors, and the APK's
+  own bundled `assets/index.html` loads with none either.
+- `versionCode 42` / `versionName 1.7.3` in `AndroidManifest.xml` and `build.sh`
+  (up from 41 / 1.7.2), same signing key — certificate SHA-256 `2035d69f…9e3b8b`,
+  unchanged, and the APK verifies against v1, v2 and v3 schemes.
+  `android/assets/index.html` is byte-identical to `web/index.html` (SHA-256
+  `c7531c9f…`) and so is the copy inside the rebuilt APK. `CHECKSUMS.txt` points
+  at the new build (`162a8045…`).
+- Left alone deliberately: the 60-second refresh interval still ticks while the
+  page is hidden (it returns immediately, and the alternatives were weighed in
+  1.5.6); the `deviceorientation` listener stays subscribed while the parallax is
+  halted by Reduce motion (each event does two clamps and a no-op queue — under a
+  pixel of work, and unsubscribing risks the tilt never coming back); and the
+  photo layer still builds a fresh `Image` on every render — measured at 0.035 ms
+  on a picture the browser has already decoded, so there is nothing there to fix.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

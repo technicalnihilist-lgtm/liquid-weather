@@ -822,6 +822,18 @@ document.addEventListener('visibilitychange', () => {
    a frozen frame of rain — and switching it off starts the loop again. */
 function onMotionChange(e) {
   still = !!e.matches;
+  /* The springs follow the same query, and they used to sample it once at load
+     (see `noMotion`): a reader who launched the app with Reduce motion on and
+     then turned it off kept the launch-time answer for the rest of the session
+     — applySettings() returned early before it ever wrote --spring, the
+     stylesheet's default curve was used instead, and the Bounce slider did
+     nothing at all until the app was restarted. Re-deriving them here makes the
+     setting work in both directions, exactly as the particle field and the
+     parallax engine already do. Nothing is written while the setting is on
+     (applySettings() still returns before the springs), so a reduced-motion
+     session renders as before. */
+  noMotion = !!e.matches;
+  applySettings();
   if (still) {
     needClear = true;
     if (fxRaf) { cancelAnimationFrame(fxRaf); fxRaf = 0; }
@@ -2221,7 +2233,10 @@ function cleanSet(raw) {
 }
 let SET = cleanSet(LS.get('lw_set', {}));
 const linOK = !!(window.CSS && CSS.supports && CSS.supports('transition-timing-function', 'linear(0,1)'));
-const noMotion = matchMedia('(prefers-reduced-motion:reduce)').matches;
+/* Watched, not sampled: this was a `const` read once at load, so switching
+   Reduce motion off while the app was open left the springs frozen at the
+   launch-time answer for the whole session (see onMotionChange). */
+let noMotion = motionMQ.matches;
 
 /* ---------- 4D depth & parallax engine ----------
    Layers are separated in Z: sky (slowest) -> clouds -> particles -> cards ->
