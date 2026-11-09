@@ -2459,6 +2459,49 @@ one more, found on the day's last pass.
   cancelled, but the token guard already stops it from painting, and cancelling
   it would mean keeping a reference to every image the app has shown.
 
+## [1.8.6] — 2026-11-10
+
+### Fixed
+- **The published APK was older than the source it was built from.**
+  `LiquidWeather.apk` was still the 1.8.4 build (`versionCode 48`) and its
+  bundled `assets/index.html` hashed to `838c4157…`, while `web/index.html` had
+  already moved to `d7e40a66…` with the 1.8.5 network fixes. Anyone installing
+  the APK got the app as it was two passes earlier, without the parse-retry and
+  photo-lookup corrections it was supposed to carry. The 1.8.5 pass could not
+  build — that environment had no JDK and no Android SDK — so the source moved
+  and the artifact did not. This pass built the APK from the current source
+  (`versionCode 50` / `versionName 1.8.6`, same signing key); the APK's bundled
+  page now hashes to `d7e40a66…`, identical to `web/index.html`.
+- **`android/build.sh` packaged whatever was in `android/assets` without ever
+  comparing it with `web/index.html`.** That is how the drift above went
+  unnoticed: the page is copied across by hand, so a build that ran after an
+  edit but before the copy shipped the previous app under a new `versionCode`
+  and said nothing. The script now stops before linking (step `[0/6]`) unless
+  the two files are byte-identical, naming the copy to make. When they already
+  match, the APK is unchanged.
+
+### Notes
+- `web/index.html` is untouched: the UI, layout, spacing, wording, gradients and
+  animation timings are exactly what 1.8.5 shipped, and the file is
+  byte-identical to that commit.
+- Verified: `node --check` on the page's script; a headless Chromium load with
+  mocked forecast, geocode and photo responses reporting zero console messages
+  and zero page errors; the new gate failing the build on a stale asset and
+  passing on matching ones; `apksigner verify --print-certs` showing the project
+  certificate (`2035d69f…`); `zipalign -c -p 4` passing; `aapt2 dump badging`
+  reporting `versionCode 50` / `versionName 1.8.6`.
+- `CHECKSUMS.txt` updated to the new digest (`d2ae1074…`, 93 KB).
+- Left alone deliberately: `build.sh` still passes `--version-code 50
+  --version-name 1.8.6` next to the manifest. Measured again on this pass — a
+  manifest reading `999` / `9.9.9` builds an APK reporting `999` / `9.9.9`, so
+  `aapt2 link` takes the manifest's values and the flags are inert; they were
+  kept in step with the manifest rather than deleted, since removing them cannot
+  change behaviour. Also left: no CI step compares the committed APK with
+  `web/index.html` (making that a gate would redden `main` between a source edit
+  and the next build, which is a policy decision, not a fix), and the script
+  still mints a keystore when `release.keystore` is missing — the certificate
+  check at the end stops such a build from shipping.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
