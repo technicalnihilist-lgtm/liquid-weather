@@ -17,6 +17,28 @@ fi
 echo "build-tools: $BT"
 echo "android.jar: $AJAR"
 
+# Refuse to package a stale page. The APK's whole UI is assets/index.html, and
+# nothing else in the build looks at it: a build run after an edit to
+# web/index.html but before the copy across silently shipped the previous
+# version of the app under a new versionCode (the 1.8.4 APK carried 1.8.3's
+# page). Compare before linking so the two can never disagree.
+echo "[0/6] asset check"
+if [ ! -f assets/index.html ]; then
+  echo "ERROR: assets/index.html is missing; there is nothing to show in the app." >&2
+  exit 1
+fi
+if [ ! -f ../web/index.html ]; then
+  echo "ERROR: ../web/index.html is missing; cannot confirm the bundled page is current." >&2
+  exit 1
+fi
+if ! cmp -s assets/index.html ../web/index.html; then
+  echo "ERROR: android/assets/index.html does not match web/index.html." >&2
+  echo "       Copy the current page across before building:" >&2
+  echo "         cp web/index.html android/assets/index.html" >&2
+  exit 1
+fi
+echo "assets/index.html matches web/index.html"
+
 rm -rf build && mkdir -p build/gen build/classes build/dex
 
 echo "[1/6] aapt2 compile"
@@ -30,7 +52,7 @@ echo "[2/6] aapt2 link"
   -A assets \
   --java build/gen \
   --min-sdk-version 23 --target-sdk-version 34 \
-  --version-code 49 --version-name 1.8.5 \
+  --version-code 50 --version-name 1.8.6 \
   --no-version-vectors
 
 echo "[3/6] javac"
