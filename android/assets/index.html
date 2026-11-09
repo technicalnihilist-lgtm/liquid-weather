@@ -1652,9 +1652,19 @@ function replayEnter() {                       // used to preview the bounce set
 function bindUnit() {
   const b = $('#unit');
   if (b) {
-    // the button only ever shows "°C"/"°F", which reads badly aloud — give it
-    // a spoken name that says what the button is (the visible label is unchanged)
-    const unitName = () => 'Temperature unit: ' + (F ? 'Fahrenheit' : 'Celsius');
+    /* The button only ever shows "°C"/"°F", which reads badly aloud, so it
+       carries a spoken name that says what the button is. That name has to
+       contain the visible label as well: it read "Temperature unit: Celsius"
+       for a button whose only visible text is "°C", which is a WCAG 2.5.3
+       (Label in Name) failure — voice control matches what you can see, so
+       "°C" reached nothing while the name did not contain it, and the unit
+       toggle was the only control in the app that could not be operated by
+       voice. The visible label is unchanged; the spoken name now carries it,
+       as its own phrase after the description (not in brackets: tools that
+       check this treat a bracketed aside as a pronunciation hint and compare
+       without it, which is how the same mismatch survived a "fix"). */
+    const unitName = () => 'Temperature unit: ' + (F ? 'Fahrenheit' : 'Celsius')
+      + ', ' + (F ? '°F' : '°C');
     b.setAttribute('aria-label', unitName());
     b.onclick = () => {
     F = !F;

@@ -2284,6 +2284,58 @@ one more, found on the day's last pass.
   nodes instead is a structural change with a real risk of drifting markup, and
   the UI is frozen.
 
+## [1.8.4] — 2026-11-09
+
+### Fixed
+- **The °C/°F toggle could not be operated by voice — its spoken name did not
+  contain the only text on it.** The button shows `°C` or `°F` and nothing else,
+  and `bindUnit()` gave it the spoken name "Temperature unit: Celsius" so a
+  screen reader would not announce a bare symbol. That name left the visible
+  label out, which is a WCAG 2.5.3 (Label in Name, Level A) failure: speech
+  input and voice control match the words the user can see, so "°C" matched no
+  control, and the unit toggle was the one button in the app that a voice user
+  could not reach at all. axe 4.14 reports it as
+  `label-content-name-mismatch` (serious) on every screen, in both units. The
+  name now ends with the visible label as its own phrase — "Temperature unit:
+  Celsius, °C" — so the visible text is part of the accessible name; the
+  description that 1.2.1 added is still there, and the visible label itself is
+  untouched. A bracketed form ("Temperature unit: Celsius (°C)") was tried
+  first and does not work: the label-in-name comparison strips parenthetical
+  asides as pronunciation hints before matching, so the mismatch survived it.
+
+### Notes
+- Verified: `node --check` on the extracted script is clean; headless Chromium
+  loads of `web/index.html` and of the APK's own bundled `assets/index.html`
+  report zero console and zero page errors, and so does a 36-action pass (both
+  unit toggles twice, six scrolls, all five sliders to 20, reset, the Cities
+  tab, a search and a clear, home, a pointer sweep, Tab and Escape). axe 4.14's
+  `label-content-name-mismatch` is gone on the forecast screen in both units.
+- Nothing on screen changed: `#main` holds the same 125 elements, the same
+  text, and the same 145 measured boxes, the computed styles of the hero, a
+  glass card, a label, the hourly strip, a day row, the nav and the unit button
+  are identical, and a screenshot of the old and new build differs only in the
+  sky band — which differs by the same amount between two runs of the *same*
+  file, because the clouds and particles are not deterministic.
+- `versionCode 48` / `versionName 1.8.4` in `AndroidManifest.xml` and
+  `build.sh` (up from 47 / 1.8.3), same signing key — certificate SHA-256
+  `2035d69f…9e3b8b` — and the rebuilt APK verifies. `android/assets/index.html`
+  is byte-identical to `web/index.html` (SHA-256 `838c4157…`) and so is the
+  copy inside the APK, which is 93 KB like 1.8.3's. `CHECKSUMS.txt` points at
+  the new build (`eb1ff1cf…`).
+- Left alone deliberately: the remove `✕` in the Cities list is a focusable
+  `role="button"` span *inside* the row's `<button>` (axe: `nested-interactive`,
+  serious). De-nesting it moves the row's glass background, its press-scale and
+  its active state onto different elements — a visible change — so it stays as
+  it is; Chrome exposes and focuses the ✕ correctly today, and its Enter/Space
+  handling is its own. The hourly strip (`.hrs`) is scrollable but carries no
+  `tabindex`; Chromium 127 and later make a scroll region focusable on their
+  own (156 does here, and Tab reaches it), so only an older WebView needs it —
+  and adding it would draw the app's white focus ring around the strip, which
+  the frozen design does not have. And each 7-day row still announces two
+  temperatures with no "low"/"high" wording and no text alternative for its
+  range bar; fixing that means adding hidden text or roles to markup the
+  rotation is not allowed to restructure.
+
 ## [1.8.3] — 2026-11-09
 
 ### Fixed
