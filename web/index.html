@@ -1269,8 +1269,17 @@ function fallbackPlace() {
   if (twin >= 0) {
     target = places[twin];
     const at = places.indexOf(el);
+    /* The row being merged away may be the one on screen. Dropping it left `cur`
+       pointing at whatever slid into its place, so the app moved to a city the
+       reader never chose and — when the saved New Delhi sat after the pinned row
+       — never repainted at all: the "Locating…" skeleton stayed up for good with
+       a perfectly good forecast for the next city one tap away. `cur` follows the
+       row the fix was merged into, the way removeSaved() keeps pointing at the
+       same city after a removal. */
+    const onScreen = cur === at;
     places.splice(at, 1);
     if (at < cur) cur--;
+    else if (onScreen) cur = places.indexOf(target);
     cur = Math.max(0, Math.min(cur, places.length - 1));
   } else {
     Object.assign(el, fb, { myLoc: false });

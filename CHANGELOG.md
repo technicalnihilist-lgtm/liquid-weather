@@ -2502,6 +2502,61 @@ one more, found on the day's last pass.
   still mints a keystore when `release.keystore` is missing — the certificate
   check at the end stops such a build from shipping.
 
+## [1.8.7] — 2026-11-10
+
+### Fixed
+- **A failed location request could leave the app on "Locating…" for good, with
+  a forecast for the city beside it never drawn.** When a position request fails
+  and the pinned "My Location" row has no fix, `fallbackPlace()` fills it with
+  New Delhi — but if New Delhi is already saved, the pinned row is dropped in
+  favour of the saved copy. `cur` was only corrected when the dropped row sat
+  *before* the one on screen (`if (at < cur) cur--`), so when the pinned row was
+  itself the row on screen the index stayed put and now pointed at whatever slid
+  into its place: the app jumped to a city the reader had not chosen. Worse, with
+  the saved New Delhi sitting after the pinned row the repaint test
+  `places.indexOf(target) === cur` was false, so `show()` was never called and
+  the "Locating…" skeleton stayed on screen permanently — no forecast, no retry
+  card, nothing to tap — even though the next city in the list had a perfectly
+  good forecast. Reachable without any unusual state: tap "Use my current
+  location" with Mumbai and New Delhi saved and refuse the prompt, or relaunch
+  after doing so (the list is saved with the pinned row first and no fix).
+  `cur` now follows the row the fix was merged into, the same way `removeSaved()`
+  keeps pointing at the same city after a removal, so the fallback is drawn.
+
+### Notes
+- Verified: `node --check` on the page's script; headless Chromium loads with
+  mocked storage, geolocation and forecast responses reporting zero console
+  messages and zero page errors in every scenario below. The fix was proved by
+  driving both builds through the same scenarios: with the list
+  `[My Location (no fix), Mumbai, New Delhi]` and a denied prompt, the 1.8.6 page
+  rendered the "Locating…" skeleton with **0** forecast requests and left it
+  there, while 1.8.7 renders New Delhi's forecast with `cur` on that row; the
+  same holds on the 15s watchdog path (a geolocation callback that never
+  answers). The control cases are unchanged: New Delhi saved *before* the pinned
+  row still repaints, a pinned row that already has a fix still redraws its own
+  forecast on a refusal, and a successful fix still renders and resolves its
+  name. For the same payload `#main`'s rendered HTML is byte-identical between
+  1.8.6 and 1.8.7 (SHA-256 `daf7c893…`), so nothing on screen changed.
+- `versionCode 51` / `versionName 1.8.7` in `AndroidManifest.xml` and
+  `build.sh` (up from 50 / 1.8.6), same signing key. `android/assets/index.html`
+  is byte-identical to `web/index.html` (SHA-256 `1fdffc7a…`). **The APK was not
+  rebuilt on this pass**: this environment has no JDK and no Android SDK, so
+  `android/build.sh` cannot run here. `LiquidWeather.apk` and `CHECKSUMS.txt` are
+  therefore untouched and still describe the 1.8.6 build (`d2ae1074…`,
+  `versionCode 50`, carrying the `d7e40a66…` page), which is one pass behind the
+  source until a build machine runs `build.sh`. Nothing is published at 1.8.7 yet
+  and the day's release is held until that build exists.
+- Left alone deliberately: `android/build.sh` exits **silently** with status 2
+  when the SDK is missing — `set -e` aborts on the failing `BT=$(ls -d …)` before
+  the "Android SDK not found" message can print, which is why this pass's build
+  attempt produced no diagnostic at all. That is a build-hygiene defect, not a
+  geolocation one, so it is recorded here rather than fixed in this pass.
+  Also left: a pinned row's coordinates are never refreshed after the first fix
+  (the ten-minute auto-refresh re-fetches the forecast but not the position), so
+  a phone carried across a city keeps the forecast for where it was — changing
+  that alters when a permission-gated call happens, which the rotation's rules
+  put behind a decision rather than a bug fix.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
