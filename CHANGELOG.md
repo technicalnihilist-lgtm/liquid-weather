@@ -2219,6 +2219,71 @@ one more, found on the day's last pass.
   `showPhoto()`'s `Image` load has no timeout, because an image request cannot be
   aborted and a late load is dropped by its token anyway.
 
+## [1.8.2] — 2026-11-09
+
+### Fixed
+- **With Depth or Parallax at 0 the depth engine went on computing and writing a
+  parallax value for every frame, for a screen that could not move.** Both
+  sliders say "0 turns it off", and the stylesheet makes that literally true:
+  every layer the engine drives — `#bgs`, `#orbLayer`, `#clouds`, `#fx`, `.card`
+  and `nav` — multiplies `--mx`/`--my` by `--dp` *and* by `--pr`, so with either
+  slider at 0 the whole transform resolves to `translate3d(0,0,0)` and no pixel
+  can change. The engine wrote the pair anyway, once per pointer move, tilt event
+  and scroll frame, and `--mx`/`--my` are inherited custom properties: each write
+  invalidated the style of the entire document — the sky, the clouds, the
+  particles, ten glass cards and the nav — and set those layers up for a raster
+  that had nothing new to paint. A reader who turned Parallax (or Depth) to 0,
+  the obvious thing to do on a phone that felt slow, therefore kept paying the
+  full per-frame cost of the effect with none of it visible. Nothing is scheduled
+  now while either slider sits at 0: the pointer, tilt and scroll handlers still
+  record their positions, so the effect resumes at the next input event with the
+  numbers it would have written, and the values already on the root stay there.
+  Sliders above 0 behave exactly as before.
+
+### Notes
+- Measured in headless Chromium (forecast, geocoder and Commons stubbed) on the
+  depth engine itself, by counting `setProperty('--mx')` calls: 30 pointer moves
+  with Parallax at 0 wrote 30 pairs before and 0 after; 20 scroll steps wrote 8
+  before and 0 after; Depth at 0 with Parallax at 55 wrote 30 before and 0 after.
+  With Parallax back at 55 the same 20 moves write again, and `#bgs`'s computed
+  transform follows the pointer as it did.
+- A trace of 60 pointer moves at Parallax 0 (devtools.timeline, same stub, same
+  pointer path): `UpdateLayoutTree` 2,454 ms → 227 ms, `RasterTask` 1,285 ms →
+  66 ms, `Paint` 347 ms → 0.6 ms. The remaining style work is the pointer's own
+  hit-testing and the nav's hover state, which is what a still screen costs.
+- Nothing on screen changed. With the mocks held fixed, `#main` renders to the
+  same markup hash (`c1f57c19d652`, 231 nodes) before and after, and the settled
+  computed transforms of `#bgs`, `#orbLayer`, `#clouds`, `#fx`, the first `.card`
+  and `nav` are identical at Parallax 55 *and* at Parallax 0. `node --check` is
+  clean on the extracted script; a headless load of `web/index.html` reports zero
+  console and zero page errors, and so does a 49-action pass (both unit toggles,
+  scroll, search and pick a city, both settings tabs, all five sliders to 20 and
+  to 70, reset, home, and a pointer sweep).
+- `versionCode 46` / `versionName 1.8.2` in `AndroidManifest.xml` and `build.sh`
+  (up from 45 / 1.8.1), same signing key — certificate SHA-256 `2035d69f…9e3b8b`
+  — and the APK verifies against the v1, v2 and v3 schemes.
+  `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `70b7314a…`) and so is the copy inside the rebuilt APK.
+  `CHECKSUMS.txt` points at the new build (`92dada80…`), and the size quoted in
+  the README follows it (`93 KB`; the new HTML crossed a 4 KB alignment boundary
+  inside the archive, which is why the APK is one page larger than 1.8.1's).
+- Left alone deliberately: `#pill` still animates `left`/`width`, so a tab change
+  lays out the nav bar on every frame for 850 ms — doing it with a transform
+  would squash the lens's 28 px corners and its inset shadows, which is a visible
+  change; `showPhoto()` still builds a fresh `Image` for a photo already on
+  screen (one per render — five for five unit toggles, no long task), which the
+  browser answers from its memory cache and which does not repaint, since the
+  `background-image` string is unchanged; `scene()` still rewrites `--cc` and the
+  twenty `.bg` classes and nine cloud opacities on every render even when the
+  scene is the same, but a render is a user action or the ten-minute refresh and
+  never on a frame path; `applySettings()` still rewrites all seven root
+  properties on every slider `input` event, which measures at 5 style
+  recalculations for a 40-step drag; and the ten glass cards are still rebuilt by
+  one `innerHTML` assignment per render, which is what makes a unit toggle cost
+  ~100 ms of blurred-backdrop raster in headless Chromium — patching the text
+  nodes instead is a structural change with a real risk of drifting markup, and
+  the UI is frozen.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

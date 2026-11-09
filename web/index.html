@@ -2301,9 +2301,28 @@ let noMotion = motionMQ.matches;
   let on = !motionMQ.matches;
   let lastX = '', lastY = '';
 
+  /* Depth at 0 and Parallax at 0 are the effect switched off, and the sliders
+     say so ("0 turns it off"). Every layer this engine drives multiplies
+     --mx/--my by --dp and by --pr in the stylesheet, so with either at 0 the
+     whole transform resolves to translate3d(0,0,0) and no pixel on screen can
+     move. The engine wrote the pair anyway — once per pointer move, tilt event
+     and scroll frame — and because --mx/--my are inherited custom properties,
+     each write invalidated the style of the entire document (the sky, the
+     clouds, the particles, ten glass cards, the nav) and set the layers up for
+     a raster that could not change anything: measured in headless Chromium,
+     sixty pointer moves with Parallax at 0 cost the same style recalculation
+     and raster as sixty moves with it on, for a still screen. Nothing is
+     scheduled while either slider sits at 0. The values already written stay on
+     the root, and the pointer, tilt and scroll inputs keep updating as before,
+     so raising a slider again resumes at the next input event with the same
+     numbers the engine would have written. */
+  function effectOff() {
+    const s = root.style;
+    return parseFloat(s.getPropertyValue('--dp')) === 0 || parseFloat(s.getPropertyValue('--pr')) === 0;
+  }
   function flush() {
     P.raf = 0;
-    if (!on) return;
+    if (!on || effectOff()) return;
     const x = cl(P.px * .7 + P.gx * .9, -1.3, 1.3).toFixed(4);
     const y = cl(P.py * .7 + P.gy * .9 + P.sy * .35, -1.3, 1.3).toFixed(4);
     /* A resting finger, a mouse that has stopped, and a page scrolled past the
@@ -2317,7 +2336,7 @@ let noMotion = motionMQ.matches;
     root.style.setProperty('--mx', x);
     root.style.setProperty('--my', y);
   }
-  function queue() { if (on && !P.raf) P.raf = requestAnimationFrame(flush); }
+  function queue() { if (on && !effectOff() && !P.raf) P.raf = requestAnimationFrame(flush); }
   function halt() { on = false; if (P.raf) { cancelAnimationFrame(P.raf); P.raf = 0; } }
   function resume() { if (on) return; on = true; lastX = lastY = ''; startTilt(); queue(); }
 
