@@ -349,16 +349,28 @@ let photoStore = readPhotoStore(LS.get('lw_photos', {}));
    to a city every time two documents were open. Every write is now the union of
    what this document holds and what is on disk, and the `storage` handler below
    adopts the other document's copy, so the two maps cannot drift apart. */
-function savePhotos() {
+function savePhotos(drop) {
   const disk = readPhotoStore(LS.get('lw_photos', {}));
+  /* `drop` names records this document has just deleted on purpose (see
+     prunePhotos). They have to go from the stored copy as well, because the
+     union below is exactly what would otherwise put them straight back. */
+  if (drop) for (const k of drop) delete disk[k];
   for (const k of Object.keys(disk)) if (!(k in photoStore)) photoStore[k] = disk[k];
   LS.set('lw_photos', photoStore);
 }
 function prunePhotos() {
   const keep = new Set(places.map(p => p.id || (p.lat + ',' + p.lon)));
-  let dirty = false;
-  for (const k of Object.keys(photoStore)) if (!keep.has(k)) { delete photoStore[k]; dirty = true; }
-  if (dirty) savePhotos();
+  /* The deleted keys are collected and handed to savePhotos(), which writes the
+     union of memory and disk. Deleting them from memory alone did nothing at
+     all: the merge put every one of them back from disk before the write, so a
+     deleted city's photo record was never pruned — it stayed in the store for
+     good, and the twelve records the loader keeps filled up with rows that no
+     city could ever read again (the live city's record is then the one the cap
+     drops, so it was looked up again at every launch). */
+  const dead = Object.keys(photoStore).filter(k => !keep.has(k));
+  if (!dead.length) return;
+  for (const k of dead) delete photoStore[k];
+  savePhotos(dead);
 }
 let cityPhoto = null, scenePhotoNow = null, photoSeq = 0, photoCtl = null, photoToken = 0;
 const photoCtx = { day: true, cov: .5 };

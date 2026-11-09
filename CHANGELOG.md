@@ -2284,6 +2284,60 @@ one more, found on the day's last pass.
   nodes instead is a structural change with a real risk of drifting markup, and
   the UI is frozen.
 
+## [1.8.3] — 2026-11-09
+
+### Fixed
+- **Deleting a saved city never actually removed its photo record — the prune
+  undid itself.** `prunePhotos()` dropped the record from the in-memory store and
+  then called `savePhotos()`, which exists to stop one document clobbering
+  another's additions and therefore writes the *union* of memory and disk: it
+  read the stored map, put every key memory no longer had straight back, and
+  wrote it out. The record for a deleted city was therefore still in `lw_photos`
+  after the delete, unchanged, and nothing else ever removed it — the twelve
+  records `readPhotoStore()` keeps filled up with rows no city could read again.
+  Because that cap is applied in insertion order, the first twelve records win
+  and the newest city's record is the one dropped: once a few cities had been
+  added and deleted, a live city was looked up on Commons again at every launch
+  instead of being answered from storage, which is the request the store exists
+  to avoid. `savePhotos()` now takes the keys that were pruned on purpose and
+  drops them from the stored copy before the union is taken, so the prune is
+  what the function always claimed to be; additions made by another document are
+  still preserved, and every other write path is unchanged.
+
+### Notes
+- Measured on 1.8.2 first, in headless Chromium with the forecast, geocoder and
+  Commons stubbed. Two saved cities with a photo record each, the second deleted
+  through the Cities sheet: 1.8.2 leaves `lw_photos` with both records
+  (`["c19.076,72.878","c18.520,73.856"]`); 1.8.3 leaves only the city still in
+  the list (`["c19.076,72.878"]`).
+- The cap: twelve records for cities that are not in the list plus one for the
+  city on screen — 1.8.2 stores 13 records after a render, so the store keeps
+  growing past the cap it is read back under; 1.8.3 prunes the twelve dead ones
+  at the same point and stores the one record that belongs to a saved city.
+- Nothing on screen changed: `#main` renders to the same markup hash
+  (`3189:618222501`, 230 nodes) before and after, and the computed styles of the
+  hero, a glass card, the nav, `#bgs` and `#orbLayer` and the root's `--k`,
+  `--blur`, `--dp`, `--pr`, `--glass` are identical. `node --check` is clean on
+  the extracted script; a headless load of `web/index.html` and of the APK's own
+  bundled `assets/index.html` report zero console and zero page errors, and so
+  does a 50-action pass (both unit toggles, scroll, settings panel, all five
+  sliders to 20, reset, the Cities tab, a search, home, and a pointer sweep).
+- `versionCode 47` / `versionName 1.8.3` in `AndroidManifest.xml` and `build.sh`
+  (up from 46 / 1.8.2), same signing key — certificate SHA-256 `2035d69f…9e3b8b`
+  — and the APK verifies. `android/assets/index.html` is byte-identical to
+  `web/index.html` (SHA-256 `a30dc806…`) and so is the copy inside the rebuilt
+  APK, which is the same size as 1.8.2's (93 KB). `CHECKSUMS.txt` points at the
+  new build (`d3673800…`).
+- Left alone deliberately: the `lw_photos` `storage` handler still adopts another
+  document's records but never drops one it removed, so a second open document
+  can write a pruned record back; the record is pruned again at the next delete
+  or render, and adopting removals would risk discarding a record this document
+  cached but has not yet written. A cleared `lw_photos` (`newValue === null`) is
+  still ignored rather than adopted, which is what keeps a stray clear from
+  wiping the map. And the store is still pruned only on a render, a delete or a
+  `storage` event, not at boot, so an offline launch keeps the records it loaded
+  until the next successful render.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
