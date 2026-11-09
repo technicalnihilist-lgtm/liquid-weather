@@ -2390,6 +2390,75 @@ one more, found on the day's last pass.
   `storage` event, not at boot, so an offline launch keeps the records it loaded
   until the next successful render.
 
+## [1.8.5] — 2026-11-09
+
+### Fixed
+- **A response that arrived with a 200 but an unreadable body was thrown away
+  after one attempt, and the app claimed to be offline.** `getJSON()` retries a
+  busy server once (408/425/429/5xx, honouring `Retry-After`) and then reads the
+  body with `r.json()`. That read is the one step that can still fail after the
+  headers said 200 — a response cut short by a dropped connection, a proxy's
+  error page, or a Wi-Fi sign-in page answering for the API on a captive portal
+  — and its `SyntaxError` went straight out of the function: `show()` caught it
+  as a link failure and drew the "Offline" card over a link that was working, the
+  payload was never cached, and the only way back was to tap the retry card by
+  hand. Reading the body now gets the same single retry the busy statuses get,
+  300ms later and only while the request is still wanted (an aborted read, or a
+  read of a request whose city has been left, is not repeated). A body that is
+  still unreadable on the second attempt fails exactly as before, so the retry
+  card and the offline path are unchanged; so is a genuinely offline device,
+  which still fails at the normal deadline because the fetch itself never
+  answered.
+- **A city-photo lookup that could not be made was repeated on every repaint.**
+  `fetchCityPhoto()` deliberately does not cache a failed lookup as "this city
+  has no photo" (one launch in a tunnel would empty the backdrop for three
+  weeks), but nothing stopped the next render asking again: `applyPhoto()` runs
+  on every render, so toggling °C/°F, pulling a refresh, or the ten-minute auto
+  refresh each started two fresh Commons requests of up to ten seconds, beside
+  the forecast, on a link that was already struggling — against an API that
+  rate-limits anonymous use, which is what made the lookups fail in the first
+  place. A failed lookup is now remembered in memory for five minutes
+  (`photoFail`, pruned with the rest of the per-city state when a city goes), so
+  a busy API is asked once instead of on every repaint. Nothing is written to
+  storage: the next launch, or the next render after the window, tries again,
+  and a lookup that answers clears its mark and caches the photo exactly as
+  before.
+
+### Notes
+- Verified: `node --check` on the extracted script is clean; a headless Chromium
+  load of `web/index.html` reports zero console messages and zero page errors.
+  The fixes were proved by driving the page with mocked responses: a 200 with a
+  body cut mid-JSON (`{"current": {"time": … , "temp`) and a 200 that is a Wi-Fi
+  sign-in page both used to give the "Offline" card after **1** forecast request
+  and now render the forecast after **2**, while a body that is unreadable twice
+  still gives the offline card after exactly 2 requests. With Commons answering
+  500, the boot plus two unit toggles used to fire **3** lookups and now fires
+  **1**, with the sky photo still on screen; with Commons answering normally the
+  photo is still cached and shown after a re-render, in one request. The 429
+  retry is unchanged (2 requests, forecast drawn).
+- Nothing on screen changed: `#main`'s rendered HTML is byte-identical to
+  1.8.4's for the same payload, and the computed styles of the page, bar, hero,
+  temperature, condition line, a glass card, an hourly cell, a day row, a range
+  bar, the nav, the pill and the photo layer are identical (only the live
+  animation opacity differs between runs of the *same* file).
+- `versionCode 49` / `versionName 1.8.5` in `AndroidManifest.xml` and `build.sh`
+  (up from 48 / 1.8.4), same signing key. `android/assets/index.html` is
+  byte-identical to `web/index.html` (SHA-256 `d7e40a66…`, 148 KB). **The APK
+  itself was not rebuilt on this pass**: the environment it ran in has no JDK
+  and no Android SDK, so `android/build.sh` cannot run there. `LiquidWeather.apk`
+  and `CHECKSUMS.txt` are therefore untouched and still point at the 1.8.4 build
+  (`eb1ff1cf…`, `versionCode 48`), which is one pass behind the source until a
+  build machine runs `build.sh`. Nothing is published at 1.8.5 yet and the day's
+  release is held until that build exists.
+- Left alone deliberately: there is still no `online` event handler, so a device
+  that reconnects after the offline card is drawn waits for the ten-minute
+  auto-refresh (or a tap on the retry card) instead of refetching at once.
+  Adding one changes *when* a screen repaints, which is a behaviour change the
+  rotation's rules put behind a decision rather than a bug fix. The abandoned
+  `Image()` in `showPhoto()` is also left as it is: its download cannot be
+  cancelled, but the token guard already stops it from painting, and cancelling
+  it would mean keeping a reference to every image the app has shown.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

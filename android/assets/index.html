@@ -375,6 +375,18 @@ function prunePhotos() {
 let cityPhoto = null, scenePhotoNow = null, photoSeq = 0, photoCtl = null, photoToken = 0;
 const photoCtx = { day: true, cov: .5 };
 const photoKeyFor = p => p ? (p.id || (p.lat + ',' + p.lon)) : '';
+/* A lookup that could not be made is deliberately not cached as "no photo"
+   (see fetchCityPhoto), which left nothing to stop the next render asking
+   again: every repaint of a city whose lookup failed — a unit toggle, a pull of
+   the refresh, the ten-minute auto refresh — started two fresh Commons
+   requests of up to ten seconds each, beside the forecast, on a link that was
+   already struggling, and against an API that rate-limits anonymous use. The
+   failure is remembered here for a few minutes, so a busy API is asked once
+   rather than on every repaint. It lives in memory only: a launch, or the next
+   render after the window, tries again, and a working lookup is never
+   suppressed. */
+const PHOTO_RETRY_MS = 5 * 60 * 1000;
+const photoFail = {};                    // key -> monotonic time of a failed lookup
 
 function paintCredit() {
   const el = $('#credLine');
@@ -452,6 +464,8 @@ async function commonsCityPhotoWith(term, signal) {
 function fetchCityPhoto(p, key) {
   const term = (p && typeof p.name === 'string') ? p.name.trim() : '';
   if (!term || /^my location$/i.test(term)) return;          // nothing to look up
+  /* asked recently and got no answer: leave the running lookup, if any, alone */
+  if (photoFail[key] && mono() - photoFail[key] < PHOTO_RETRY_MS) return;
   const seq = ++photoSeq;
   if (photoCtl) photoCtl.abort();
   const ctl = new AbortController();
@@ -466,13 +480,14 @@ function fetchCityPhoto(p, key) {
     /* A lookup that could not be made is not a city without photos. Caching it
        as "none" would keep the backdrop empty for three weeks after one launch
        in a tunnel, so only a lookup that actually answered is remembered. */
-    if (!r && failed) return;
+    if (!r && failed) { photoFail[key] = mono(); return; }
     /* A lookup that lands after its city was deleted used to be cached anyway:
        prunePhotos() had already run, so the record was written back for a key no
        row could ever read and stayed on disk (one per deleted city, taking up
        the twelve slots the loader keeps). Nothing to remember when the row that
        asked for it is gone. */
     if (!places.some(p => photoKeyFor(p) === key)) return;
+    delete photoFail[key];                  // it answered: nothing left to back off from
     photoStore[key] = r ? Object.assign({ at: Date.now() }, r) : { none: 1, at: Date.now() };
     savePhotos();
     if (r && places[cur] && photoKeyFor(places[cur]) === key) {
@@ -951,7 +966,14 @@ function applyHeldFocus() {
    more attempt after a short pause (honouring Retry-After, capped), because the
    free Open-Meteo tiers answer 429 under a burst; a request the server rejected
    (400/404) is never repeated, and neither is a network error or a timeout, so
-   a genuinely offline device still fails at the normal deadline. */
+   a genuinely offline device still fails at the normal deadline.
+   A 200 whose body will not parse is the fourth transient case: a response cut
+   short by a dropped connection, a proxy's error page, or a Wi-Fi sign-in page
+   answering for the API. It used to be thrown straight out, so a link that was
+   working fine was reported as "Offline" after a single unlucky response, and
+   the payload was never cached either. Reading the body is the one step that
+   can fail after the headers said 200, so it gets the same single retry the
+   busy statuses get — 300ms later, and only if the request is still wanted. */
 const RETRYABLE = { 408: 1, 425: 1, 429: 1, 500: 1, 502: 1, 503: 1, 504: 1 };
 async function getJSON(url, timeout, signal) {
   const ctl = new AbortController();
@@ -964,7 +986,16 @@ async function getJSON(url, timeout, signal) {
   try {
     for (let attempt = 0; ; attempt++) {
       const r = await fetch(url, { signal: ctl.signal, headers: { Accept: 'application/json' } });
-      if (r.ok) return await r.json();
+      if (r.ok) {
+        try { return await r.json(); }
+        catch (e) {
+          /* an aborted read is not a damaged body: nothing to repeat */
+          if (attempt || ctl.signal.aborted) throw e;
+          await new Promise(res => setTimeout(res, 300));
+          if (ctl.signal.aborted) throw new Error('aborted');
+          continue;
+        }
+      }
       if (attempt || !RETRYABLE[r.status]) throw new Error('HTTP ' + r.status);
       const after = parseInt(r.headers.get('Retry-After'), 10);
       const wait = Math.min(2000, Math.max(300, isFinite(after) ? after * 1000 : 300));
@@ -1040,6 +1071,7 @@ function pruneCache() {
   const keep = new Set(places.map(p => p.id));
   for (const k of Object.keys(cache)) if (!keep.has(k)) delete cache[k];
   for (const k of Object.keys(preFail)) if (!keep.has(k)) delete preFail[k];
+  for (const k of Object.keys(photoFail)) if (!keep.has(k)) delete photoFail[k];
   prunePhotos();                            // a deleted city's photo record goes with its row
 }
 function prefetchForecast(p, ctl) {
