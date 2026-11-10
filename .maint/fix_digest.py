@@ -1,5 +1,6 @@
 import pathlib, sys
 
+# Records the digest of the APK the previous one-shot job published.
 p = pathlib.Path('CHANGELOG.md')
 s = p.read_text(encoding='utf-8')
 old = 'the new digest (`b4de262b…`)'

@@ -1,13 +1,11 @@
-name: Maintenance pass (one-shot, digest)
+name: Maintenance digest (one-shot)
 
 # Records the digest of the APK the previous one-shot job published. Staged for
-the same reason: the maintenance environment cannot write to this repository.
+# the same reason: the maintenance environment cannot write to this repository.
 
 on:
   push:
     branches: [ main ]
-    paths:
-      - '.maint/fix_digest.py'
   workflow_dispatch:
 
 permissions:
