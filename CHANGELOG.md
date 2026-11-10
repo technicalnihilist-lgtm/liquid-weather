@@ -2557,6 +2557,67 @@ one more, found on the day's last pass.
   that alters when a permission-gated call happens, which the rotation's rules
   put behind a decision rather than a bug fix.
 
+## [1.8.8] — 2026-11-10
+
+### Fixed
+- **Tapping a saved city in the Cities sheet could throw, and wrote a bad index
+  to storage.** The sheet's saved rows carry the index of the row they select
+  (`data-go`), and the list behind them is rewritten by the location code, which
+  never repainted the sheet: `locate()` re-keys the pinned row and `dropTwin()`
+  merges a saved copy of the city it landed on away, and `fallbackPlace()` drops
+  the pinned row in favour of the saved copy. So the sheet went on listing a row
+  that no longer existed, with the index it used to have. With "My Location"
+  selected and one city saved, a fix arriving on that city leaves a one-row list
+  while the sheet still offers its old row at index 1; tapping it ran
+  `selectCity(1)`, which has no bounds check (unlike `removeSaved()`),
+  `places[1]` was undefined, `cur` was saved as 1, and the skeleton built from
+  the missing row threw `TypeError: Cannot read properties of undefined
+  (reading 'name')` out of the tap handler. Reachable without unusual state:
+  launch with "My Location" showing, open the Cities tab while it is locating,
+  and tap the saved city once the fix lands. The sheet is now repainted wherever
+  the list it indexes changes under it (`repaintSheet()`, the same rule the
+  `storage` handler already followed for another document's write), and
+  `selectCity()` returns early for an index the list no longer holds, the guard
+  `removeSaved()` has always had. A failed location request takes the same path
+  through `fallbackPlace()`, so the denial case is fixed with it.
+
+### Notes
+- No visual change: for the same payload the rendered `#main` HTML, the sheet's
+  saved list and its search results are byte-identical to 1.8.7's in three
+  control scenarios (location denied with and without a saved city, location
+  granted), and the computed layout, colours, gradients, wording and animation
+  timings are untouched — the only new code runs when the saved list actually
+  changes under an open sheet.
+- Verified: `node --check` on the page's script; headless Chromium loads with
+  zero console messages and zero page errors; and the fix was proved by driving
+  1.8.7 and 1.8.8 through the scenario above — 1.8.7 keeps `data-go="1"` in the
+  sheet, throws the `TypeError` on the tap and persists `lw_cur=1` against a
+  one-row list, while 1.8.8 repaints the row at `data-go="0"`, selects it with no
+  exception and leaves `lw_cur=0`. The same check on the denied path
+  (`fallbackPlace()`) shows 1.8.7 leaving the stale index and 1.8.8 repainting
+  it, with the app on the same city either way.
+- `versionCode 52` / `versionName 1.8.8` in `AndroidManifest.xml` and
+  `build.sh` (up from 51 / 1.8.7), same signing key. `android/assets/index.html`
+  is byte-identical to `web/index.html` (SHA-256 `37a19636…`). **The APK was not
+  rebuilt on this pass**: this environment has no JDK and no Android SDK
+  (`android/build.sh` exits 2 before its own diagnostic), so `LiquidWeather.apk`
+  and `CHECKSUMS.txt` still describe the 1.8.6 build (`d2ae1074…`, `versionCode
+  50`), which is two passes behind the source until a build machine runs
+  `build.sh`. Nothing is published at 1.8.8 yet and the day's release is held
+  until that build exists.
+- Left alone deliberately: `countryMatches()` collapses a bundled city the
+  geocoder already returned by comparing names only, so a geocoder that answers a
+  country query with the same city under another spelling (Roma for Rome) would
+  still list it twice — measured against the live services this pass could not
+  reach a payload that does it (Nominatim answers a country query with the
+  country itself, and Open-Meteo is asked for English names, which match the
+  bundled ones), so nothing was changed on a guess. Also left: an offline device
+  waits the full 9s + 9s geocoder budget before the bundled list appears, and
+  painting the bundled matches first would change what a search shows the moment
+  it is typed — a behaviour decision, not a bug fix. The sheet also keeps its
+  scroll position when it is reopened; resetting it would move what the reader
+  sees on open, which is a UI decision.
+
 ## [Unreleased]
 
 Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,

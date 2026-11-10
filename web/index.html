@@ -1216,6 +1216,7 @@ async function locate(silent) {
     const nm = late || { name: 'My Location', sub: `${lat.toFixed(2)}, ${lon.toFixed(2)}` };
     el.name = nm.name; el.sub = nm.sub;
     savePlaces(); nav();
+    repaintSheet();                           // dropTwin() above may have removed a saved row
     await fc;
     if (my !== locSeq) return;                // a newer location request owns the screen now
     if (cur === places.indexOf(el)) await show();
@@ -1223,6 +1224,7 @@ async function locate(silent) {
       if (!nm2 || el.lat !== lat || el.lon !== lon) return;
       el.name = nm2.name; el.sub = nm2.sub;
       savePlaces(); nav();
+      repaintSheet();                         // the saved row's name just changed under the sheet
       if (cur === places.indexOf(el)) renameVisible(el);
     });
     if (!silent) toast('Updated to your location');
@@ -1285,6 +1287,7 @@ function fallbackPlace() {
     Object.assign(el, fb, { myLoc: false });
   }
   savePlaces(); nav();
+  repaintSheet();                             // the pinned row was filled or merged away
   /* Re-render only if the row we just filled — or the saved row it was merged
      into — is the one on screen. This used to test `cur === 0`, so with the My
      Location row anywhere but first the app kept its "Locating…" skeleton for
@@ -1842,6 +1845,13 @@ addEventListener('pointerup', endDrag);
 addEventListener('pointercancel', endDrag);
 
 function selectCity(i) {
+  /* The index comes from a row the sheet painted, and the list can shrink under
+     it (locate() merges a saved twin away while the sheet is open, and the
+     sheet used to keep the row). An index the list no longer holds read
+     `places[i]` as undefined, `cur` was written out as that index, and the
+     skeleton built from it threw on `p.name` — an uncaught TypeError from a tap
+     on a row that looked perfectly ordinary. removeSaved() has the same guard. */
+  if (!places[i]) return;
   if (i === cur) { $('#main').scrollTo({ top: 0, behavior: 'smooth' }); return; }
   dirNext = i > cur ? 1 : -1;
   cur = i; savePlaces(); nav();
@@ -2093,6 +2103,18 @@ function paintSheet(q, results) {
       : 'No place found for “' + term + '”';
   }
   listEl.innerHTML = html;
+}
+/* The saved rows the sheet is showing are only as fresh as its last paint, and
+   the list they are indexed against is rewritten in places the sheet never hears
+   about: locate() re-keys the pinned row, merges a saved twin away and fills in
+   the city name when it arrives, and fallbackPlace() drops the pinned row in
+   favour of the saved copy. Each of those leaves the sheet listing a row that is
+   no longer there, with the index it used to have — and tapping that row asked
+   selectCity() for a place the list no longer holds (see there). Same rule the
+   `storage` handler follows for another document's write: repaint the saved
+   rows, reusing the results already on screen. */
+function repaintSheet() {
+  if (sheet.classList.contains('open')) paintSheet(qEl.value);
 }
 
 /* A geocoder can answer 200 with a row that carries no coordinates at all, or
