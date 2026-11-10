@@ -2646,7 +2646,7 @@ one more, found on the day's last pass.
   over 1.8.9; `android/assets/index.html` is byte-identical to `web/index.html`
   (SHA-256 `4f3e76fc…`), the APK rebuilt from it bundles that same page and
   carries `versionCode 54` / `versionName 1.8.10`, and `CHECKSUMS.txt` carries
-  the new digest (`b4de262b…`).
+  the new digest (`29fc7bc8…`).
 
 ### Notes
 - Verified: `node --check` on the page's script; a headless Chromium load of
