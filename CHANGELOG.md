@@ -2620,7 +2620,56 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
-Nothing yet. Ideas that would be welcome: a language switch, sleet/haze scenes,
+### Fixed — build & release hygiene (2026-11-10, 10:00 IST pass)
+- **`android/build.sh` failed with no output at all when the Android SDK was
+  missing.** The two SDK probes (`BT=$(ls -d "$SDK"/build-tools/* | sort -V |
+  tail -1)`) sat under `set -e -o pipefail`, and a missing directory makes `ls`
+  exit 2 — so the script died inside the assignment, two lines before the
+  "Android SDK not found" message it was written to print. The whole failure was
+  `exit 2` with empty stdout *and* empty stderr, indistinguishable from a crash
+  or a killed process; the previous two passes hit exactly this and could only
+  report "build.sh exits 2 before its own diagnostic". Both probes now end in
+  `|| true` — a failed probe is not an error, the `-z` test below it is — so the
+  message prints (naming the path it looked in) and the build exits 1.
+- **The version number was written twice and only one copy shipped.**
+  `AndroidManifest.xml` declares `android:versionCode`/`android:versionName`, and
+  `build.sh` passed its own hardcoded `--version-code 52 --version-name 1.8.8` to
+  `aapt2 link`; aapt2's flags override the manifest, so the copy in the build
+  script is the one that reached the APK. A pass that bumped the manifest alone
+  built an APK still stamped with the old versionCode — and one that bumped only
+  the script left the repo advertising a version the APK did not carry. The
+  script now reads both values out of the manifest (and fails loudly if they are
+  absent), so the two cannot disagree.
+- **Nothing ever checked `CHECKSUMS.txt` against the APK it describes.** A
+  rebuilt `LiquidWeather.apk` could be committed with the old digest left in
+  place and the repo would go on publishing a checksum that fails for every
+  downloader. The CI build job now verifies the digest before it builds
+  anything.
+
+### Notes
+- No UI change of any kind: `web/index.html` is untouched (SHA-256 still
+  `37a19636…`, byte-identical to `android/assets/index.html`), so there is no new
+  APK, no version bump and no change to `CHECKSUMS.txt` on this pass.
+- Verified: `bash -n android/build.sh`; the page's script still passes
+  `node --check` and a headless Chromium load of `web/index.html` still produces
+  zero console messages and zero page errors; and both fixes were proved with a
+  stub SDK — HEAD's script exits 2 with 0 bytes on stdout and stderr where the
+  fixed one prints its diagnostic and exits 1, and with the manifest bumped to
+  `53`/`1.8.9` HEAD hands aapt2 `--version-code 52 --version-name 1.8.8` while
+  the fixed script hands it `53`/`1.8.9`, and still passes `52`/`1.8.8` for the
+  unchanged manifest. The new CI gate was run on the real tree (`OK`) and on a
+  deliberately altered APK (`FAILED`, exit 1).
+- Left alone deliberately: the shipped `LiquidWeather.apk` is still the 1.8.6
+  build (`versionCode 50`, `d2ae1074…`) while the source is at 1.8.8 — this
+  environment has no JDK or Android SDK, so nothing can be rebuilt or re-signed
+  here. Also left: `build.sh` writes the APK to `android/build/` and nothing
+  copies it to the repo root or rewrites `CHECKSUMS.txt`, which is how the two
+  drifted apart; auto-publishing on every build is a behaviour change for the
+  maintainer rather than a bug fix. And a CI gate on the committed APK's
+  versionCode (to enforce "only ever increases") would need a hand-rolled parser
+  for the APK's binary manifest, which is more risk than the defect it guards.
+
+Ideas that would be welcome: a language switch, sleet/haze scenes,
 a home-screen widget, and a "feels like" curve on the hourly strip.
 
 ## [1.0] — 2026-10-26

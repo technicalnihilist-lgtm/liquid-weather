@@ -8,14 +8,34 @@ set -e -o pipefail
 cd "$(dirname "$0")"
 
 SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
-BT=$(ls -d "$SDK"/build-tools/* 2>/dev/null | sort -V | tail -1)
-AJAR=$(ls "$SDK"/platforms/android-*/android.jar 2>/dev/null | sort -V | tail -1)
+# `|| true` on both probes. With `set -e -o pipefail` an unset or wrong SDK made
+# `ls` fail (status 2) inside the assignment, so the script died on that line and
+# the "Android SDK not found" message below never printed: the build failed with
+# exit 2 and completely empty output, which reads as a crash rather than as a
+# missing SDK. A failed probe is not an error here; the -z test underneath is.
+BT=$(ls -d "$SDK"/build-tools/* 2>/dev/null | sort -V | tail -1 || true)
+AJAR=$(ls "$SDK"/platforms/android-*/android.jar 2>/dev/null | sort -V | tail -1 || true)
 if [ -z "$BT" ] || [ -z "$AJAR" ]; then
-  echo "Android SDK not found. Set ANDROID_SDK_ROOT (needs platforms;android-34 and build-tools;34.0.0)." >&2
+  echo "Android SDK not found in ${SDK}. Set ANDROID_SDK_ROOT (needs platforms;android-34 and build-tools;34.0.0)." >&2
   exit 1
 fi
 echo "build-tools: $BT"
 echo "android.jar: $AJAR"
+
+# The version number has one home: AndroidManifest.xml. It used to be written
+# twice — in the manifest and again in the aapt2 flags below — and aapt2's
+# --version-code/--version-name override the manifest, so the copy in this file
+# was the one that actually shipped. Bumping only the manifest therefore built an
+# APK still stamped with the old versionCode, and bumping only this file left the
+# repo advertising a version the APK did not have. Read the manifest instead, so
+# the two can never disagree.
+VCODE=$(sed -n 's/.*android:versionCode="\([0-9]\{1,\}\)".*/\1/p' AndroidManifest.xml | head -1)
+VNAME=$(sed -n 's/.*android:versionName="\([^"]\{1,\}\)".*/\1/p' AndroidManifest.xml | head -1)
+if [ -z "$VCODE" ] || [ -z "$VNAME" ]; then
+  echo "ERROR: could not read android:versionCode / android:versionName from AndroidManifest.xml." >&2
+  exit 1
+fi
+echo "version: $VNAME (versionCode $VCODE)"
 
 # Refuse to package a stale page. The APK's whole UI is assets/index.html, and
 # nothing else in the build looks at it: a build run after an edit to
@@ -52,7 +72,7 @@ echo "[2/6] aapt2 link"
   -A assets \
   --java build/gen \
   --min-sdk-version 23 --target-sdk-version 34 \
-  --version-code 52 --version-name 1.8.8 \
+  --version-code "$VCODE" --version-name "$VNAME" \
   --no-version-vectors
 
 echo "[3/6] javac"
