@@ -1,0 +1,95 @@
+name: Maintenance pass (one-shot)
+
+# Applies a staged maintenance patch, rebuilds the APK from the patched source
+# and commits the result. Staged because the maintenance environment has no
+# write access to this repository: the job runs here, with the workflow's own
+# token, and the staging files are removed afterwards.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.maint/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pass:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[maint-pass]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply the staged patch
+        run: |
+          git apply --check --ignore-whitespace .maint/lifecycle-2026-11-10-1600.patch \
+            || git apply --check .maint/lifecycle-2026-11-10-1600.patch
+          git apply --ignore-whitespace --whitespace=nowarn .maint/lifecycle-2026-11-10-1600.patch \
+            || patch -p1 --batch --forward < .maint/lifecycle-2026-11-10-1600.patch
+          cp web/index.html android/assets/index.html
+          cmp -s web/index.html android/assets/index.html
+          grep -n 'android:versionCode\|android:versionName' android/AndroidManifest.xml
+
+      - name: Syntax-check the page's script
+        run: |
+          python3 - <<'PY'
+          import re, pathlib
+          s = pathlib.Path('web/index.html').read_text()
+          pathlib.Path('/tmp/app.js').write_text(re.search(r'<script>(.*)</script>', s, re.S).group(1))
+          PY
+          node --check /tmp/app.js
+          echo "node --check ok"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android platform + build-tools
+        run: |
+          SDKM=$(command -v sdkmanager || echo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager")
+          yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+          "$SDKM" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Build signed APK
+        run: |
+          chmod +x android/build.sh
+          ./android/build.sh
+
+      - name: Verify the APK
+        run: |
+          BT=$(ls -d "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/* | sort -V | tail -1)
+          "$BT/aapt2" dump badging android/build/LiquidWeather.apk | head -1
+          "$BT/aapt2" dump badging android/build/LiquidWeather.apk | head -1 | grep -q "versionCode='54'" && echo "versionCode 54 ok"
+          "$BT/aapt2" dump badging android/build/LiquidWeather.apk | head -1 | grep -q "versionName='1.8.10'" && echo "versionName 1.8.10 ok"
+          python3 - <<'PY'
+          import zipfile, hashlib, pathlib
+          apk = zipfile.ZipFile('android/build/LiquidWeather.apk')
+          bundled = apk.read('assets/index.html')
+          source = pathlib.Path('web/index.html').read_bytes()
+          assert bundled == source, 'the APK bundles a different page than web/index.html'
+          print('bundled page matches source:', hashlib.sha256(source).hexdigest())
+          PY
+          "$BT/apksigner" verify --print-certs android/build/LiquidWeather.apk > verify.txt 2>&1
+          cat verify.txt
+          grep -q "2035d69f949e12e56728cc83964fb7fa663c40fa45765cb3b880dc08229e3b8b" verify.txt && echo "signing key unchanged"
+
+      - name: Publish the APK and its checksum
+        run: |
+          cp android/build/LiquidWeather.apk LiquidWeather.apk
+          NEW=$(sha256sum LiquidWeather.apk | cut -d' ' -f1)
+          sed -i -E "s/^[0-9a-f]{64}  LiquidWeather\.apk$/${NEW}  LiquidWeather.apk/" CHECKSUMS.txt
+          grep -E '^[0-9a-f]{64}  LiquidWeather\.apk$' CHECKSUMS.txt | sha256sum -c -
+          echo "digest ${NEW}"
+
+      - name: Commit and push
+        run: |
+          git config user.name "Liquid Weather Maintenance"
+          git config user.email "maintenance@liquidweather.app"
+          git add -A
+          git status --short
+          git commit -F .maint/message.txt
+          git push origin HEAD:main

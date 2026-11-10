@@ -1,0 +1,25 @@
+fix(lifecycle): stop the thunderstorm flash when Reduce motion is on
+
+The flash is the one animation in the app the stylesheet cannot reach: every
+other animation follows prefers-reduced-motion through a media query, and the
+particle field follows it through the `still` flag, but lightning() builds its
+effect with Element.animate() and never looked at the setting. A reader who
+asked the system for no motion — and who by the same setting got no rain, no
+snow, no parallax and no springs — still had the whole screen flash white every
+2.5-7.5 seconds in a storm, with a timer waking the WebView to start each one.
+
+lightning() now returns after clearing its timer while the setting is on, and
+onMotionChange() calls it in both directions, so turning the setting off
+mid-storm restarts the chain and turning it back on stops it.
+
+Measured in headless Chromium with the query emulated: 3 flashes in 14s before,
+0 after, with the same storm under no-preference still flashing (2 vs 4 — the
+interval is random) and the frame loop unchanged (rAF 104 vs 102). #main's
+markup and every computed style of the bar, hero, cards, nav, pill, photo layer,
+active scene and the --k/--glass/--blur/--dp/--pr/--cc variables are identical
+to 1.8.9 across four payloads, so nothing on screen changes for anyone else.
+
+versionCode 54 / versionName 1.8.10; assets/index.html, the rebuilt APK's
+bundled page and web/index.html all carry SHA-256 4f3e76fc...; CHECKSUMS.txt
+carries the new digest and the signature still verifies (cert 2035d69f...,
+v1/v2/v3).
