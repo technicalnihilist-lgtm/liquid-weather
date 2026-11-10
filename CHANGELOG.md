@@ -2620,6 +2620,71 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — network & API robustness (2026-11-11, 00:00 IST pass)
+- **The reverse-geocode pair was the one request in the app that could not be
+  cancelled, so an abandoned location request kept talking to both geocoders.**
+  Every other request takes a signal and every superseded one is aborted: the
+  forecast fetch (`fcCtl`), the forecast pre-fetch a location request starts
+  (`prefCtl`), the photo lookup (`photoCtl`) and the search (`searchCtl`).
+  `reverseName()` was called with none, so a location request that a newer one
+  had replaced went on asking anyway. Tapping "Use my current location" twice a
+  moment apart left four requests in flight for one place: the abandoned pair
+  ran to its own 8s deadline (16s when the first service failed and the second
+  was tried), holding the radio awake for an answer nothing would read, and it
+  fired Nominatim's reverse endpoint for a place nobody had asked about — a
+  service whose usage policy is one request a second, which answers a burst by
+  blocking. Measured in headless Chromium against 1.8.11 with a 4s geocoder and
+  two taps 600ms apart: **three reverse requests started, none cancelled, all
+  three delivered**. `locate()` now keeps the controller for the name lookup it
+  starts (`nameCtl`) beside the one for its pre-fetch, aborts it when a newer
+  request takes over, and `reverseName()` takes the signal and returns `null`
+  once it is aborted — the same "no name came back" answer the 2.5s name budget
+  already hands the caller, so a superseded request paints nothing and the row
+  keeps the coordinates the request that replaced it will name. The same run on
+  this build: **three started, the two abandoned ones aborted within
+  milliseconds (`net::ERR_ABORTED`), one delivered**, and with the first service
+  answering 400 so the second is asked: three Nominatim requests on 1.8.11, all
+  three delivered, against one delivered and two aborted here.
+- Version bumped to 1.8.12 (`versionCode 56`), same signing key, so it installs
+  over 1.8.11; `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `0e342a7c…`), the APK was rebuilt from it with `android/build.sh`
+  (JDK 17 + build-tools 34.0.0), bundles that same page, carries `versionCode
+  56` / `versionName 1.8.12`, and `CHECKSUMS.txt` carries the new digest
+  (`6ef002dc…`). `apksigner verify --print-certs` still reports the project key
+  (`2035d69f…`, `CN=Liquid Weather`).
+
+### Notes
+- No visual change: for the same payload the rendered `#main` markup, the
+  `--k/--glass/--blur/--dp/--pr/--cc` variables and the computed styles of the
+  hero, the cards, the nav, the pill, the photo layer and the active scene are
+  byte-identical to 1.8.11 across five control payloads (clear day, partly
+  cloudy, rain at night, thunderstorm, fog), and the name still fills in on the
+  same schedule when it arrives after the 2.5s budget (`My Location` →
+  `My Location, 19.08, 72.88` → `Mumbai, India`, sampled at 1/2.5/3.6/6/9s, the
+  same timeline on both builds).
+- Verified: `node --check` on the page's script; a headless Chromium load of
+  `web/index.html` with mocked storage, forecast, geocoder, Commons and image
+  responses reporting zero console messages and zero page errors in all five
+  control scenarios; 90 random actions over the tabs, the
+  sheet, searches, saves, removals, the unit toggle, refresh and Escape with
+  10% of every API response replaced by a 408/429/500/502/503 (some with
+  `Retry-After`) and 6% by an HTML sign-in page, a truncated payload, `{}`, `[]`
+  or non-JSON, leaving no console error, no page error, no `NaN` in the DOM and
+  no stuck "Searching…"; and the fix itself proved by the before/after
+  cancellation counts above.
+- Left alone deliberately: a device that loses the link keeps the retry card
+  until the reader taps it or the ten-minute refresh comes round — there is no
+  `online` listener, and adding one would repaint the screen at a moment the
+  reader did not ask for, which is a behaviour decision rather than a bug fix.
+  Also left: `autoRefresh()` moves its own mark even when the refresh it started
+  fails, so a failed automatic refresh is not retried for ten minutes (the same
+  deliberate brake on hammering a link that is down); `getJSON()`'s one retry
+  shares the caller's single deadline, so a 429 that arrives late in the budget
+  leaves the retry little time (capping `Retry-After` at 2s is the documented
+  trade); and the city photo's `thumburl` is stored sliced to 400 characters,
+  which no live Commons URL reached this pass (the longest of twelve city
+  queries was 271).
+
 ### Fixed — build & release hygiene (2026-11-10, 20:00 IST pass)
 - **Nothing compared the committed APK with the sources it claims to be built
   from.** `CHECKSUMS.txt` only proves that the `LiquidWeather.apk` in the repo is

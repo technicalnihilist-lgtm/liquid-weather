@@ -1130,6 +1130,7 @@ const GEO_NAME_WAIT = 2500;
    your location" over a screen that had just located successfully. */
 let locSeq = 0;
 let prefCtl = null;                         // the pre-fetch the current location request started
+let nameCtl = null;                         // and the reverse-geocode pair it started
 function getPosition() {
   return new Promise((res, rej) => {
     if (!navigator.geolocation) return rej(new Error('unsupported'));
@@ -1154,19 +1155,37 @@ function getPosition() {
     } catch (e) { finish(rej, e); }
   });
 }
-async function reverseName(lat, lon) {
+/* The name lookup is the one pair of requests in the app that could not be
+   cancelled. locate() aborts the *forecast* pre-fetch of a request it has
+   replaced (prefCtl) and every other request in the app takes a signal, but
+   these two were started with none, so a location request that had been
+   superseded went on talking to both geocoders: two taps of "Use my current
+   location" a moment apart left four requests in flight for one place, the
+   abandoned pair ran to its 8s deadline (16s if the first service failed and
+   the second was tried) holding the radio awake for an answer nothing would
+   read, and it fired Nominatim's reverse endpoint for a place nobody had asked
+   about — an API whose usage policy is one request a second, and which answers
+   a burst by blocking. The signal is the one locate() creates for the request;
+   an aborted lookup returns null, which the caller already treats as "no name
+   came back" (the same thing the 2.5s budget hands it), so a superseded
+   request paints nothing and the row keeps the coordinates it will be named
+   from by the request that replaced it. */
+async function reverseName(lat, lon, signal) {
+  const gone = () => !!(signal && signal.aborted);
   try {
-    const j = await getJSON(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`, 8000);
+    const j = await getJSON(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`, 8000, signal);
     const city = j.city || j.locality || j.principalSubdivision || '';
     const country = j.countryName || '';
     if (city) return { name: city, sub: country };
   } catch (e) {}
+  if (gone()) return null;                    // replaced: the second service is not asked
   try {
-    const j = await getJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&lat=${lat}&lon=${lon}`, 8000);
+    const j = await getJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&lat=${lat}&lon=${lon}`, 8000, signal);
     const a = (j && j.address) || {};
     const city = a.city || a.town || a.village || a.county || a.state || '';
     if (city) return { name: city, sub: a.country || '' };
   } catch (e) {}
+  if (gone()) return null;                    // the coordinate label is for a row that moved on
   return { name: 'My Location', sub: `${lat.toFixed(2)}, ${lon.toFixed(2)}` };
 }
 /* A fix — or the New Delhi fallback — can land on a city that is already in the
@@ -1237,7 +1256,12 @@ async function locate(silent) {
     const pctl = new AbortController();
     prefCtl = pctl;
     const fc = prefetchForecast(el, pctl);
-    const nmP = reverseName(lat, lon);
+    /* One name lookup at a time, for the same reason: the request that was just
+       replaced must stop asking the geocoders (see reverseName). */
+    if (nameCtl) nameCtl.abort();
+    const nctl = new AbortController();
+    nameCtl = nctl;
+    const nmP = reverseName(lat, lon, nctl.signal);
     const late = await Promise.race([nmP, new Promise(r => setTimeout(() => r(null), GEO_NAME_WAIT))]);
     /* The guard above covered the coordinates only. A second "Use my current
        location" tapped while the first fix was still being named let the older
