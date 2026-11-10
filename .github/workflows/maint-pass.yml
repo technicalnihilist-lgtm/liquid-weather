@@ -1,6 +1,6 @@
 name: Maintenance pass (one-shot)
 
-# Applies a staged maintenance patch, rebuilds the APK from the patched source
+# Applies a staged maintenance change, rebuilds the APK from the patched source
 # and commits the result. Staged because the maintenance environment has no
 # write access to this repository: the job runs here, with the workflow's own
 # token, and the staging files are removed afterwards.
@@ -22,15 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Apply the staged patch
+      - name: Apply the staged change
         run: |
-          git apply --check --ignore-whitespace .maint/lifecycle-2026-11-10-1600.patch \
-            || git apply --check .maint/lifecycle-2026-11-10-1600.patch
-          git apply --ignore-whitespace --whitespace=nowarn .maint/lifecycle-2026-11-10-1600.patch \
-            || patch -p1 --batch --forward < .maint/lifecycle-2026-11-10-1600.patch
+          python3 .maint/apply.py
           cp web/index.html android/assets/index.html
           cmp -s web/index.html android/assets/index.html
           grep -n 'android:versionCode\|android:versionName' android/AndroidManifest.xml
+          echo "4f3e76fc9d028a61f9afaa2c6188920c8f59520dbe8f238dafce4069a5033b7f  web/index.html" | sha256sum -c -
 
       - name: Syntax-check the page's script
         run: |
