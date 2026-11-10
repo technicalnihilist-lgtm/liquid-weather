@@ -1156,10 +1156,26 @@ async function reverseName(lat, lon) {
    showed that city twice: two of the five slots for one place. The duplicate
    copy is dropped, and `cur` stays on the row it was pointing at. */
 function dropTwin(keep) {
+  let onScreen = false;
   for (let i = places.length - 1; i >= 0; i--) {
     if (places[i] === keep || places[i].id !== keep.id) continue;
+    /* The copy being merged away can be the row on screen: a fix that lands
+       after the reader has already picked that city from the sheet (a slow fix
+       or a permission dialog is exactly when this happens) used to drop the
+       displayed row and leave `cur` on whatever slid into its index — with the
+       city still after it, the app pointed at a city the reader had not chosen
+       while the screen still showed the located one, and the next repaint (the
+       refresh button, the tab coming back) drew that other city out of nowhere. */
+    if (i === cur) onScreen = true;
     places.splice(i, 1);
     if (i < cur) cur--;
+  }
+  /* `cur` follows the row the copy was merged into, the way fallbackPlace() and
+     removeSaved() keep it on the same city; the located row and the copy are
+     the same place, so this is the row that was on screen. */
+  if (onScreen) {
+    const at = places.indexOf(keep);
+    if (at >= 0) cur = at;
   }
   cur = Math.max(0, Math.min(cur, places.length - 1));
 }

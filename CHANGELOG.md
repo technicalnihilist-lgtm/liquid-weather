@@ -2620,6 +2620,24 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — geolocation edge cases (2026-11-10, 12:00 IST pass)
+- **A fix that merged a duplicate city away left the app pointing at a
+  different city than the one on screen.** When a location fix resolves to a
+  place that is already in the saved list, `locate()` re-keys the pinned row and
+  `dropTwin()` removes the saved copy. If that copy was the row on screen — a
+  slow fix, or a permission dialog answered late, is exactly when the reader has
+  already picked that city from the Cities sheet — `dropTwin()` spliced it out
+  and left `cur` on whatever slid into its index. With a city still after it,
+  the app then pointed at that other city while the screen still showed the
+  located one, and the next repaint (the sheet's refresh button, the tab coming
+  back after ten minutes) silently drew a city the reader never chose. `cur` now
+  follows the row the copy was merged into, the way `fallbackPlace()` and
+  `removeSaved()` already keep it on the same city. Nothing on screen changes:
+  the two rows are the same place, so the repaint that follows is the located
+  city that was already displayed.
+- Version bumped to 1.8.9 (`versionCode 53`), same signing key, so it installs
+  over 1.8.8; `CHECKSUMS.txt` carries the new digest.
+
 ### Fixed — build & release hygiene (2026-11-10, 10:00 IST pass)
 - **`android/build.sh` failed with no output at all when the Android SDK was
   missing.** The two SDK probes (`BT=$(ls -d "$SDK"/build-tools/* | sort -V |
