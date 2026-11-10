@@ -21,6 +21,18 @@ jobs:
         run: |
           grep -E '^[0-9a-f]{64}  LiquidWeather\.apk$' CHECKSUMS.txt | sha256sum -c -
 
+      # The checksum above only proves the committed APK is the file the digest
+      # was taken from — a stale APK has a perfectly valid checksum of its own.
+      # Nothing compared the APK itself with the sources it claims to be built
+      # from, so two real failures went unnoticed: an APK bundling an older
+      # assets/index.html than web/index.html (the 1.8.4 APK carried 1.8.3's
+      # page), and an APK whose versionCode/versionName disagreed with
+      # AndroidManifest.xml after a bump that was never rebuilt. Both are
+      # checked here, before the build, so a release cannot publish an app that
+      # is not the one in the repository.
+      - name: Verify the committed APK matches the sources
+        run: python3 .github/scripts/verify_apk.py .
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:

@@ -2620,6 +2620,52 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — build & release hygiene (2026-11-10, 20:00 IST pass)
+- **Nothing compared the committed APK with the sources it claims to be built
+  from.** `CHECKSUMS.txt` only proves that the `LiquidWeather.apk` in the repo is
+  the file the digest was taken from — a stale APK has a perfectly valid
+  checksum of its own — so two failures were invisible until someone installed
+  the release. First, the APK can bundle an older `assets/index.html` than
+  `web/index.html`: `android/build.sh` compares those two files at build time,
+  which stops a build made from a stale copy, but nothing looked at the page
+  inside the APK that is committed and published, so a pass that edited the
+  page, copied it into `android/assets/` and committed without rebuilding left
+  every source-side check green and shipped the previous app under a new
+  version number — exactly how the 1.8.4 APK came to carry 1.8.3's page.
+  Second, the APK's `versionCode`/`versionName` can disagree with
+  `android/AndroidManifest.xml` if the manifest was bumped and the APK was not
+  rebuilt (or an older APK was restored over a newer one), and the manifest is
+  the single home of the version. A new gate,
+  `.github/scripts/verify_apk.py`, reads both versions out of the APK's binary
+  manifest, compares them with `android/AndroidManifest.xml`, and compares the
+  SHA-256 of the APK's bundled `assets/index.html` with `web/index.html`; the
+  CI build job runs it before it builds anything, so the mismatch fails the
+  push instead of a downloader.
+
+### Notes
+- No app change of any kind: `web/index.html` is untouched (SHA-256 still
+  `220d3a5d…`, byte-identical to `android/assets/index.html`), so there is no
+  new APK, no version bump and no change to `CHECKSUMS.txt` on this pass.
+- Verified: `node --check` on the page's script; a headless Chromium load of
+  `web/index.html` with mocked forecast, geocoder, Commons and image responses
+  reporting zero console errors or warnings, zero page errors and zero failed
+  requests
+  (282 DOM nodes, the forecast drawn); the new gate exits 0 on the tree as
+  committed and 1 on each of the three failures it guards — a manifest bumped
+  to 56/1.8.12 with the 55/1.8.11 APK left in place, one byte appended to
+  `web/index.html` after the build, and a missing APK — each naming the file and
+  the mismatch; and `build.yml` still parses as YAML.
+- Left alone deliberately: the shipped `LiquidWeather.apk` is 1.8.11
+  (`versionCode 55`) while the latest release is still v1.8 (`versionCode 44`) —
+  today's release is cut from the 22:00 pass, and this environment has no JDK or
+  Android SDK, so nothing here can be rebuilt or re-signed anyway. Also left:
+  `README.md` still advertises "Latest APK: v1.7" on line 8 while v1.8 is the
+  latest release (a doc line that moves with each release), `build.sh` still
+  does not copy its APK to the repository root or rewrite `CHECKSUMS.txt` (a
+  behaviour change for the maintainer, recorded in 1.8.8), and "`versionCode`
+  only ever increases" still has no gate — that needs the history of published
+  APKs, not the single committed one.
+
 ### Fixed — search & geocoding (2026-11-10, 18:00 IST pass)
 - **A query in the form the search sheet itself prints found nothing.** Every
   row in that sheet is labelled "city, country" — "Mumbai, India", which is also
