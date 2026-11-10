@@ -2015,14 +2015,42 @@ const fold = s => {
   const v = String(s).toLowerCase();
   return v.normalize ? v.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : v;
 };
+const pickPopular = list => list.slice(0, 8).map(c => ({ name: c[0], sub: c[1], lat: c[2], lon: c[3] }));
 function localMatches(q) {
   const s = fold(q.trim());
   if (!s) return [];
-  return POPULAR.filter(c => {
+  const hits = POPULAR.filter(c => {
     const name = fold(c[0]), country = fold(c[1]);
     return name.startsWith(s) || country.startsWith(s) ||
       name.split(/[\s-]+/).some(word => word.startsWith(s));
-  }).slice(0, 8).map(c => ({ name: c[0], sub: c[1], lat: c[2], lon: c[3] }));
+  });
+  if (hits.length) return pickPopular(hits);
+  /* The rule above tests the whole query as the start of one name or one
+     country, and that is all it tests. Two ordinary queries therefore matched
+     nothing at all, with the place sitting in the bundled list:
+       - one that names the city and its country, which is the form this sheet
+         prints in every row — "Mumbai, India", also the row's accessible name.
+         "mumbai india", "mumbai, india" and "mumbai," all answered "No place
+         called …", and so did every "<city> <country>" query, comma or not;
+       - one that names a country by a word that is not its first: "korea"
+         matched nothing although Seoul, South Korea is in the list, because
+         the country is filed under "South Korea".
+     Only the fallback is affected — this function answers when the geocoders
+     cannot, which is exactly when the bundled list is the only answer a reader
+     can get — so the rule is widened here and nowhere else: the query is split
+     into words, and a place matches when every word starts a word of its name
+     or of its country. "delhi india" finds Delhi, "korea" finds Seoul, and
+     "london paris" still finds nothing because no place carries both. A word
+     shorter than two letters makes the query too vague to widen (it is what a
+     reader types on the way to a real one), so those are left unanswered as
+     before. Every query the rule above already answered returns from it above
+     and is untouched. */
+  const toks = s.split(/[\s,;:.!?"'“”‘’()\[\]{}\/\\|+*&=~^%$#@<>–—-]+/).filter(Boolean);
+  if (!toks.length || toks.some(t => t.length < 2)) return [];
+  return pickPopular(POPULAR.filter(c => {
+    const words = (fold(c[0]) + ' ' + fold(c[1])).split(/[\s-]+/);
+    return toks.every(t => words.some(word => word.startsWith(t)));
+  }));
 }
 const pid = o => 'c' + o.lat.toFixed(3) + ',' + o.lon.toFixed(3);
 /* Every place is keyed by pid(), which rounds the coordinates to three decimals

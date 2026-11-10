@@ -2620,6 +2620,58 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — search & geocoding (2026-11-10, 18:00 IST pass)
+- **A query in the form the search sheet itself prints found nothing.** Every
+  row in that sheet is labelled "city, country" — "Mumbai, India", which is also
+  the row's accessible name — and the bundled list that answers when the
+  geocoders cannot could not be found by that label. `localMatches()` tested the
+  whole query as the *start* of one city name or one country, and that is all it
+  tested, so "mumbai india", "mumbai, india" and even "mumbai," each answered
+  "No place called …" with Mumbai sitting in `POPULAR`; the same was true of
+  every "city country" query, and of a country named by a word that is not its
+  first — "korea" matched nothing although Seoul, South Korea is in the list,
+  because the country is filed under "South Korea". It shows only when the
+  geocoders cannot answer, since this list *is* the fallback — which is exactly
+  when it is the whole answer a reader can get. When the old rule finds nothing
+  the query is now split into words and a place matches when every word starts a
+  word of its city name or of its country: "mumbai, india" finds Mumbai,
+  "korea" finds Seoul, "london paris" still finds nothing because no place
+  carries both, and a word shorter than two letters leaves the query unanswered
+  as before. Anything the old rule already answered is untouched — it is tried
+  first and returns before the new one runs.
+- Version bumped to 1.8.11 (`versionCode 55`), same signing key, so it installs
+  over 1.8.10; `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `220d3a5d…`), the APK rebuilt from it bundles that same page and
+  carries `versionCode 55` / `versionName 1.8.11`, and `CHECKSUMS.txt` carries
+  the new digest (`446e2c70…`).
+
+### Notes
+- Verified: `node --check` on the page's script; a headless Chromium load of
+  `web/index.html` with mocked storage, forecast, Commons and geocoder responses
+  reporting zero console messages and zero page errors; and the fix measured on
+  281 queries against the previous build with both geocoders failing — 11
+  answered differently and every one of them went from "no results" to the right
+  city, while the other 270 returned byte-identical rows (all 26 single letters,
+  all 140 bundled city names, all 70 country names, and 45 partial and odd
+  queries). Tapping the new row for "mumbai, india" saves Mumbai at
+  19.076, 72.8777 and the app draws its forecast; "london paris" still says
+  "No place found"; and 100 random actions over the sheet (typing, removals,
+  result taps, Enter, close and reopen) leave no console error, no stuck
+  "Searching…", no duplicate row inside a section and no stale `data-go` /
+  `data-rm` index.
+- Left alone deliberately: the alias gaps — "usa", "us", "britain",
+  "bangalore", "bombay" and "new delhi" (the list holds Delhi, and its Delhi
+  entry sits on New Delhi's coordinates, so the app already treats the two as
+  one place) — are entries in the data, not rules: adding aliases or a city
+  would change which rows the sheet lists for queries that already work, so they
+  are written down instead of shipped. Also left: `search()` prepends the
+  bundled cities for a country query and filters them against the geocoder's
+  rows by *name*, not by place, so a differently-named row for the same city can
+  sit beside it; running `dedupe()` after that prepend would remove a row a
+  reader can see, which wants its own measurement. And the `.rm` on a result row
+  for a co-located city (searching "delhi" offers "Remove Delhi", which removes
+  the saved "New Delhi") is the same data question, not a code one.
+
 ### Fixed — memory & lifecycle (2026-11-10, 16:00 IST pass)
 - **Reduce motion stopped the rain but not the lightning.** The thunderstorm
   scene's flash is the one animation in the app that the stylesheet cannot
