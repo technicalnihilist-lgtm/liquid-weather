@@ -837,6 +837,19 @@ function startFx() { if (!fxRaf && !pageHidden()) fxRaf = requestAnimationFrame(
 let lt;
 function lightning() {
   clearTimeout(lt);
+  /* Reduce motion covers this animation too. Every other animation in the app
+     follows the query through the stylesheet, and the particle field follows it
+     through `still` — but the flash is created in script with
+     Element.animate(), which no media query can reach, and nothing here ever
+     looked at the setting. A reader who had asked the system for no motion
+     still had a thunderstorm flashing the whole screen white every 2.5–7.5
+     seconds (measured in headless Chromium with the query emulated: two
+     flashes in twelve seconds, while the rain beside it correctly stood
+     still) — the most intrusive animation in the app running for the one
+     reader who asked for none, and a wake-up every few seconds to start it.
+     Nothing to flash while the setting is on; onMotionChange() below starts
+     the chain again when it is turned off. */
+  if (still) return;
   if (mode !== 'storm') return;
   /* The visibility handler below stops this chain when the app goes away, but
      it can only stop a chain that exists at that moment. A forecast that
@@ -889,6 +902,12 @@ function onMotionChange(e) {
   } else {
     startFx();
   }
+  /* The flash chain follows the setting the same way, in both directions:
+     called here it clears the armed timer and arms nothing while the setting is
+     on (see `lightning`), and re-arms a thunderstorm's chain the moment the
+     setting is turned off, so a reduced-motion session that ends is the same
+     storm the reader would have had without it. */
+  lightning();
 }
 try {
   if (motionMQ.addEventListener) motionMQ.addEventListener('change', onMotionChange);
