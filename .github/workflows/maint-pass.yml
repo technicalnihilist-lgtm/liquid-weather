@@ -61,8 +61,9 @@ jobs:
         run: |
           BT=$(ls -d "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/* | sort -V | tail -1)
           "$BT/aapt2" dump badging android/build/LiquidWeather.apk | head -1
-          "$BT/aapt2" dump badging android/build/LiquidWeather.apk | head -1 | grep -q "versionCode='54'" && echo "versionCode 54 ok"
-          "$BT/aapt2" dump badging android/build/LiquidWeather.apk | head -1 | grep -q "versionName='1.8.10'" && echo "versionName 1.8.10 ok"
+          "$BT/aapt2" dump badging android/build/LiquidWeather.apk | head -1 | grep -q "versionCode='54'" || { echo "wrong versionCode"; exit 1; }
+          "$BT/aapt2" dump badging android/build/LiquidWeather.apk | head -1 | grep -q "versionName='1.8.10'" || { echo "wrong versionName"; exit 1; }
+          echo "versionCode 54 / versionName 1.8.10 ok"
           python3 - <<'PY'
           import zipfile, hashlib, pathlib
           apk = zipfile.ZipFile('android/build/LiquidWeather.apk')
@@ -73,7 +74,8 @@ jobs:
           PY
           "$BT/apksigner" verify --print-certs android/build/LiquidWeather.apk > verify.txt 2>&1
           cat verify.txt
-          grep -q "2035d69f949e12e56728cc83964fb7fa663c40fa45765cb3b880dc08229e3b8b" verify.txt && echo "signing key unchanged"
+          grep -q "2035d69f949e12e56728cc83964fb7fa663c40fa45765cb3b880dc08229e3b8b" verify.txt || { echo "signing key changed"; exit 1; }
+          echo "signing key unchanged"
 
       - name: Publish the APK and its checksum
         run: |

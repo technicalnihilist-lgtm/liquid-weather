@@ -103,9 +103,13 @@ web.write_text(s, encoding='utf-8')
 
 cl = ROOT / 'CHANGELOG.md'
 c = cl.read_text(encoding='utf-8')
-anchor = "## [Unreleased]\n\n### Fixed — geolocation edge cases (2026-11-10, 12:00 IST pass)"
-c = swap(c, anchor, "## [Unreleased]\n\n" + CHANGELOG_ENTRY + "### Fixed — geolocation edge cases (2026-11-10, 12:00 IST pass)", 'changelog')
-cl.write_text(c, encoding='utf-8')
+marker = '### Fixed — memory & lifecycle (2026-11-10, 16:00 IST pass)'
+if marker in c:
+    print('changelog entry already present, left alone')
+else:
+    anchor = "## [Unreleased]\n\n### Fixed — geolocation edge cases (2026-11-10, 12:00 IST pass)"
+    c = swap(c, anchor, "## [Unreleased]\n\n" + CHANGELOG_ENTRY + "### Fixed — geolocation edge cases (2026-11-10, 12:00 IST pass)", 'changelog')
+    cl.write_text(c, encoding='utf-8')
 
 mf = ROOT / 'android/AndroidManifest.xml'
 m = mf.read_text(encoding='utf-8')
