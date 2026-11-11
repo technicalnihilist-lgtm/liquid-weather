@@ -2620,6 +2620,83 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — accessibility & semantics (2026-11-11, 18:00 IST pass)
+- **Focus on the hourly strip was thrown away by the next render.** The strip is
+  a scroll container with no focusable children, so Chrome puts it in the tab
+  order — the third stop on the forecast screen, as the 08:00 pass recorded. The
+  held-focus mechanism that carries a control across a re-render only remembered
+  controls that have an `id`, and the strip has none, so every repaint of `#main`
+  dropped focus to `<body>`: a background refresh ten minutes in, a unit toggle
+  from the keyboard, a new city's forecast landing. Measured in headless
+  Chromium: focus on `.hrs`, then `show(true)` — `document.activeElement` was
+  `BODY` before, `.hrs` after.
+- **The offline retry card lost focus as soon as the retry worked.** The card is
+  a `div` carrying `role="button"` (it has to be reachable without a pointer, so
+  it is in the tab order), and it has no `id` either: pressing Enter on it
+  fetched the forecast, the retry card was replaced by the new screen, and focus
+  went to `<body>` — the reader was left at the top of the document with no way
+  back except tabbing the whole page again. Measured: focus on the card, Enter,
+  forecast painted — `BODY` before, the city button (`#openSearch`, the first
+  control of the new screen) after, the same rule `paintSheet()` already
+  follows when the row a reader was on disappears.
+  Both are one cause, fixed once: a control is now named across a render by
+  whatever still identifies it in the new markup — its `id`, or, for the two
+  that have none, the class that marks them out (`focusKeyOf()`) — and if the
+  control itself is gone, the first control of the new screen takes the focus
+  instead of the document. Focus on every control that already had an `id`
+  (unit toggle, city button, settings sliders, sheet rows) behaves exactly as it
+  did.
+- **The search sheet's section labels were not headings.** "Saved places",
+  "Results" and "Popular" are styled as headings and read as ordinary text, so a
+  screen reader had no way to jump between the three groups of a list that can
+  hold a dozen rows. Each now carries `role="heading"` / `aria-level="2"`; the
+  markup and the computed style of `.sh-h` are unchanged (the attributes paint
+  nothing), and Chrome's accessibility tree now shows `heading "SAVED PLACES"`
+  and `heading "RESULTS"` where it showed no headings at all.
+- Version bumped to 1.8.14 (`versionCode 58`), same signing key, so it installs
+  over 1.8.13; `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `4dea5d41…`), the APK was rebuilt from it with `android/build.sh`
+  (JDK 17 + build-tools 34.0.0), bundles that same page, carries `versionCode
+  58` / `versionName 1.8.14`, and `CHECKSUMS.txt` carries the new digest
+  (`54de7b34…`). `apksigner verify --print-certs` still reports the project key
+  (`2035d69f…`, `CN=Liquid Weather`).
+
+### Notes
+- No visual change: for four payloads (clear day, rain at night, thunderstorm,
+  fog) `#main`'s markup is byte-identical to 1.8.13's; the sheet's markup
+  differs only by the two new attributes per section label; and the computed
+  styles of 219-220 elements per scene differ only in the animated layers
+  (`#clouds` transforms, the parallax offsets, in-flight opacities), by the same
+  amount as the same build differs from itself between two runs. Screenshots are
+  not a usable witness here for the same reason — the randomly-seeded layers and
+  the glass repaint differ run to run.
+- Verified: `node --check` on the page's script; a headless Chromium load with
+  mocked forecast, geocoder, Commons and image responses reporting zero page
+  errors; 140 random actions over the tabs, the sheet, searches, picks,
+  removals, the unit toggle, the settings sliders and Escape with every ninth API
+  response replaced by a 500 or a non-JSON body, leaving no page error, no
+  `NaN`/`undefined` in `#main` and no stuck "Searching…"; and the before/after
+  focus readings above on both builds, plus the six focus paths that already
+  worked (unit toggle, sheet opened from the Cities tab and dismissed, sheet
+  opened from the city bar and dismissed, picking a city, removing a saved row,
+  opening and closing the settings panel) returning identical answers on 1.8.13
+  and this build.
+- Left alone deliberately: **text contrast over the scenes**, unchanged from the
+  08:00 pass — the top bar's city name still falls to 2.97:1 on the fog scene
+  where a bright cloud drifts behind it, and every way of raising it (a text
+  shadow, a darker glass under the bar) is a visible change. Also left: the 7-day
+  rows still announce "Today ☀️ 21° 31°" with no low/high words and the range bar
+  still carries no accessible value (both need a visually-hidden text style or a
+  restructured row, and a clipped-out `span` per cell is a DOM change I could not
+  prove paint-free for a defect a reader can still work out from the order); and
+  the ✕ is still a focusable `role="button"` span nested inside the row's
+  `<button>`, invalid nesting that Chrome nevertheless exposes with its own name
+  and that Enter/Space operate correctly. This pass also could not fix the build
+  script for a 2 GB machine — `d8` and `apksigner` ask for more address space
+  than this sandbox's `ulimit -v` allows, and the build here needed
+  `ulimit -v unlimited` in the shell; that is build hygiene, not this area, so
+  `android/build.sh` is unchanged.
+
 ### Fixed — accessibility & semantics (2026-11-11, 08:00 IST pass)
 - **The search sheet threw keyboard focus away every time it repainted itself.**
   `paintSheet()` replaces the whole list with `innerHTML`, which destroys the

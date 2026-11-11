@@ -961,21 +961,45 @@ function toast(msg, ms) {
    a background refresh ten minutes later moved focus out from under the reader
    — while a clock corrected forwards closed it before the re-render it was
    meant for and focus was dropped to <body> after all. */
-let heldFocus = { id: '', until: 0 };
+/* The remembered control was named by its id, which silently left out the two
+   focusable things on the forecast screen that have none: the hourly strip (a
+   scroll container, so Chrome puts it in the tab order) and the offline retry
+   card (a div carrying role="button"). Focus on either was dropped to <body>
+   by the next render — a background refresh replacing the page under the
+   strip, or the retry itself painting the forecast it fetched — and the next
+   Tab started again from the top of the document. A control is now named by
+   whatever still identifies it in the new markup: its id, or the class that
+   marks it out. */
+let heldFocus = { key: '', until: 0 };
+function focusKeyOf(el) {
+  if (!el) return '';
+  if (el.id) return '#' + el.id;
+  if (el.classList.contains('hrs')) return '#main .hrs';
+  if (el.classList.contains('card') && el.getAttribute('role') === 'button') return '#main .card[role="button"]';
+  return '';
+}
 function holdFocusIn(sel) {
   const a = document.activeElement;
-  if (!a || a === document.body || !a.id) return;
+  if (!a || a === document.body) return;
   const host = document.querySelector(sel);
-  if (host && host.contains(a)) heldFocus = { id: a.id, until: mono() + 4000 };
+  if (!host || !host.contains(a)) return;
+  const key = focusKeyOf(a);
+  if (key) heldFocus = { key, until: mono() + 4000 };
 }
-function holdFocusOn(id) { if (id) heldFocus = { id, until: mono() + 4000 }; }
+function holdFocusOn(key) { if (key) heldFocus = { key, until: mono() + 4000 }; }
 function applyHeldFocus() {
-  const h = heldFocus; heldFocus = { id: '', until: 0 };
-  if (!h.id || mono() > h.until) return;
+  const h = heldFocus; heldFocus = { key: '', until: 0 };
+  if (!h.key || mono() > h.until) return;
   const a = document.activeElement;
   if (a && a !== document.body) return;            // focus is already somewhere real
-  const el = document.getElementById(h.id);
-  if (el && !el.closest('[inert]')) { try { el.focus({ preventScroll: true }); } catch (e) {} }
+  const el = document.querySelector(h.key);
+  if (el && !el.closest('[inert]')) { try { el.focus({ preventScroll: true }); } catch (e) {} return; }
+  /* The control itself is gone: the retry card the reader pressed has been
+     replaced by the forecast it fetched. Hand focus to the first control of
+     the new screen rather than leaving it on <body> — the rule paintSheet()
+     already follows when the row a reader was on disappears. */
+  const first = document.querySelector('#main button, #main [role="button"]');
+  if (first && !first.closest('[inert]')) { try { first.focus({ preventScroll: true }); } catch (e) {} }
 }
 
 /* ---------- network ----------
@@ -1985,7 +2009,7 @@ function closeSheet() {
       try { back.focus({ preventScroll: true }); } catch (e) {}
       /* the newly picked city's forecast is still loading and will replace
          this button, so ask the render to put focus back on it */
-      holdFocusOn(back.id);
+      holdFocusOn('#' + back.id);
     }
     if (opener) {
       sheetOpener = null;                        // one dismissal, one return
@@ -2198,19 +2222,19 @@ function paintSheet(q, results) {
       ${here && hasFix(here) ? '<button class="sh-r" id="shRefresh" title="Refresh forecast" aria-label="Refresh forecast">↻</button>' : ''}
     </div>`;
   if (saved.length) {
-    html += `<div class="sh-h">Saved places</div>` + saved.map(p =>
+    html += `<div class="sh-h" role="heading" aria-level="2">Saved places</div>` + saved.map(p =>
       `<button class="sh-i" aria-label="${esc(p.name + (p.sub ? ', ' + p.sub : ''))}" data-go="${places.indexOf(p)}">
         <span class="ic">🏙️</span>
         <span style="min-width:0"><b>${esc(p.name)}</b><small>${esc(p.sub || '')}</small></span>
         <span class="rm" data-rm2="${places.indexOf(p)}" role="button" tabindex="0" aria-label="Remove ${esc(p.name)}">✕</span></button>`).join('');
   }
   if (q.trim()) {
-    html += `<div class="sh-h">Results</div>`;
+    html += `<div class="sh-h" role="heading" aria-level="2">Results</div>`;
     if (results === null) html += `<div class="sh-empty"><span class="spin"></span>Searching…</div>`;
     else if (!results.length) html += `<div class="sh-empty">No place called “${esc(q.trim())}”. Try a nearby city, or the country name.</div>`;
     else html += results.map(o => row(o)).join('');
   } else {
-    html += `<div class="sh-h">Popular</div>` + POPULAR.slice(0, 8).map(o =>
+    html += `<div class="sh-h" role="heading" aria-level="2">Popular</div>` + POPULAR.slice(0, 8).map(o =>
       row({ name: o[0], sub: o[1], lat: o[2], lon: o[3] })).join('');
   }
   /* The sheet answered a query silently: nothing in it was a live region, so a
