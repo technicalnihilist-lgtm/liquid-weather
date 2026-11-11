@@ -2620,6 +2620,56 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Clean — time & timezone correctness (2026-11-11, 22:00 IST pass)
+- **Nothing shippable found; no code changed.** The whole time path was read end
+  to end and exercised: `hourIndex()` (the "Now" cell, including the midnight
+  correction), `todayIndex()` (which daily row is "Today", and the hero's
+  `H:`/`L:`, the summary's high and low and the UV card that follow it),
+  `cityNow()`/`cityDate()` (`utc_offset_seconds` applied to the device's UTC
+  clock), `cityClock()`, `sunTimes()`/`isDayNow()` (the scene, the summary's
+  night sentences and the sun line), `clock()`/`hl()`/`dayName()` (the labels),
+  `uvAt()`, and the two elapsed-time clocks (`mono()`/`aged()` with the
+  ten-minute refresh, the ten-minute cache TTL and the focus-restore window).
+- Proved, not just read: the eight helpers were lifted out of the page and run
+  against 8,640 generated states — every clock hour and the minutes 00/07/15/
+  30/45/59, twelve city offsets from -11:00 to +14:00 (including +05:30,
+  +05:45 and +09:30), each payload drawn at fetch, +10 min, +1 h, +7 h and
+  +25 h — comparing `hourIndex()` and `todayIndex()` with an independent
+  oracle (the city's wall clock applied to the payload's own blocks): **zero
+  divergences**. The same helpers were then driven through the real page in
+  headless Chromium with a mocked forecast, geocoder and Commons: a fresh
+  22:07 IST payload, a payload drawn across midnight (fetched 23:50, read at
+  00:05 — "Today" moves to the new day, the strip opens on 12 AM, the scene and
+  the summary turn to night), the post-midnight window where the API's daily
+  block still starts yesterday (labels read `Tue, Today, Thu…` and the hero
+  comes from today's row), a London spring-forward night with no 02:00 hour
+  (the strip reads 1 AM → 3 AM, nothing repeats, nothing stalls), a New York
+  fall-back payload read from an Indian device, a payload with no
+  `utc_offset_seconds`, and an hourly block that ends before the current hour.
+  Every one renders the correct hour, the correct "Today" row and the correct
+  day/night state, with zero console errors and zero page errors.
+- Left alone deliberately: (1) **a DST transition inside the cache window.**
+  `utc_offset_seconds` is a single number for the whole payload, so a payload
+  fetched an hour before a transition and still on screen an hour after it is
+  one hour off until the next fetch — at most ten minutes in normal use, and
+  fixable only with a timezone database the app deliberately does not carry.
+  (2) **"tonight"/"overnight" wording in the small hours.** Every night-time
+  sentence is chosen from `isDayNow()` alone, so a clear 03:00 sky reads "Clear
+  and calm tonight — good stargazing" and "no rain expected overnight". It is
+  the wrong word for the hour, but the sentences are visible copy and the UI is
+  frozen; it needs a wording decision, not a bug fix. (3) **A payload more than
+  seven days old** (an app left open and offline): its hourly block ends before
+  the city's clock, so the strip fills with its last hour and the 7-day list
+  falls back to row 0, which is then labelled "Today" over a week-old row.
+  Reachable only by leaving the page alive for a week with no successful
+  refresh, and the whole screen is that stale by then. (4) **A payload with no
+  usable `current.time`** still anchors the strip on the first hour it has,
+  which is the documented fallback from 1.3.7 and needs a broken payload, not a
+  broken clock.
+- No visual change and no behaviour change: `web/index.html` is byte-identical
+  to 1.8.15 (SHA-256 `39fb9deb…`). The APK was rebuilt only because this is the
+  day's release (see 1.9 below).
+
 ### Fixed — network & API robustness (2026-11-11, 20:00 IST pass)
 - **Every repaint of the screen cancelled the city-photo lookup and started it
   again.** `render()` calls `applyPhoto()`, which calls `fetchCityPhoto()` for a
@@ -3130,6 +3180,52 @@ one more, found on the day's last pass.
 Ideas that would be welcome: a language switch, sleet/haze scenes,
 a home-screen widget, and a "feels like" curve on the hourly strip.
 
+## [1.9] — 2026-11-11
+
+The day's release, cut from the 22:00 IST pass. It publishes the whole run of
+fixes the programme made since 1.8 — 1.8.1 through 1.8.15 plus the 11 November
+passes — as one version, which is what "a release a day, from the day's last
+pass" is for: the published app is now the app in the repository.
+
+### Fixed (carried in this release)
+- **Focus survives a re-render, for every control.** The search sheet's repaints
+  no longer drop focus to `<body>` (08:00 pass), and neither does a repaint of
+  the forecast screen for the two controls that have no `id` — the hourly strip
+  and the offline retry card (18:00 pass). A control is named by whatever still
+  identifies it in the new markup, and if it is gone the new screen's first
+  control takes the focus.
+- **The search sheet's section labels are headings** (`role="heading"`,
+  `aria-level="2"`), so a screen reader can jump between "Saved places",
+  "Results" and "Popular".
+- **A repaint no longer restarts the city-photo lookup** (20:00 pass): the
+  lookup in flight is remembered by the city it belongs to, so a °C/°F toggle, a
+  trip to the Cities tab or the ten-minute refresh no longer aborts it and asks
+  Commons again — measured at 1 request instead of 1-then-2-then-3.
+- Everything else since 1.8, in detail above: the reverse-geocode pair is
+  cancelled with the request that owns it, the thunderstorm flash honours
+  Reduce motion, `prunePhotos()` deletes the record it prunes, the geocoder's
+  duplicate rows and the `<city>, <country>` label lookup are fixed, and the
+  build refuses a stale `assets/index.html` or a version that disagrees with the
+  manifest.
+
+### Notes
+- `versionCode 60` / `versionName 1.9` in `android/AndroidManifest.xml` (up from
+  59 / 1.8.15), same signing key, so it installs over every 1.8 build.
+- The APK was rebuilt from this tree with `android/build.sh` (JDK 17,
+  build-tools 34.0.0, platform 34). It bundles `assets/index.html` byte-identical
+  to `web/index.html` (SHA-256 `39fb9deb…`), carries `versionCode 60` /
+  `versionName 1.9`, and `.github/scripts/verify_apk.py` agrees on all three.
+  `CHECKSUMS.txt` carries its digest, `c36954f2c231e14d498b5c04cd5ab8971b8ebf56b35e87914d685f5de87448ea`,
+  and `apksigner verify --print-certs` still reports the project key
+  (`2035d69f…`, `CN=Liquid Weather`).
+- The 22:00 pass itself found nothing shippable in its area (time & timezone),
+  so the page in this release is the same page as 1.8.15; only the version
+  metadata changed.
+- Verified: `node --check` on the page's script; a headless Chromium load of
+  `web/index.html` with mocked forecast, geocoder, Commons and image responses
+  reporting zero console errors and zero page errors in three time-of-day
+  states; `bash -n android/build.sh`; and the APK checks above.
+
 ## [1.0] — 2026-10-26
 
 First public release.
@@ -3160,7 +3256,8 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.5.2...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.9...HEAD
+[1.9]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.9
 [1.5.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.5.2
 [1.5]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.5
 [1.3.4]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.3.4
