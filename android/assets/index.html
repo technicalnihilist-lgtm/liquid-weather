@@ -1238,11 +1238,22 @@ async function reverseName(lat, lon, signal) {
    list. The pinned row is keyed by its coordinates, so the saved copy and the
    pinned row end up with the same id and the same name, and the Cities list
    showed that city twice: two of the five slots for one place. The duplicate
-   copy is dropped, and `cur` stays on the row it was pointing at. */
+   copy is dropped, and `cur` stays on the row it was pointing at.
+   The copies are recognised by the app's own rule, not by their key alone. Two
+   rows are the same place when samePlace() says so — same key, or the same name
+   within 25 km — which is what addPlace(), row() and repairSaved() have always
+   used. Comparing ids missed the case this path exists for: the device's fix for
+   Mumbai (19.0550, 72.8692) is 2.4 km from the bundled Mumbai a reader saved
+   (19.076, 72.8777), so the keys differ, the merge never fired and "Use my
+   current location" in the city you already saved left Mumbai in the list twice
+   — two of the five slots for one place, and a fifth city refused. An exact key
+   match still merges here; the name-based half of the rule can only fire once
+   the row has been named, which is why locate() calls this again when the
+   geocoder answers (see there). */
 function dropTwin(keep) {
   let onScreen = false;
   for (let i = places.length - 1; i >= 0; i--) {
-    if (places[i] === keep || places[i].id !== keep.id) continue;
+    if (places[i] === keep || !samePlace(places[i], keep)) continue;
     /* The copy being merged away can be the row on screen: a fix that lands
        after the reader has already picked that city from the sheet (a slow fix
        or a permission dialog is exactly when this happens) used to drop the
@@ -1320,6 +1331,13 @@ async function locate(silent) {
        name when it turns up. */
     const nm = late || { name: 'My Location', sub: `${lat.toFixed(2)}, ${lon.toFixed(2)}` };
     el.name = nm.name; el.sub = nm.sub;
+    /* And once more now that the row has a name. dropTwin() above ran while the
+       row was still called "My Location", so only its key could match a saved
+       copy; the rule the rest of the app uses — same name, within 25 km — can
+       only be applied here, where the geocoder has said which city the fix is
+       in. Without it a fix 2.4 km from the city the reader had already saved
+       left that city in the list twice (see dropTwin()). */
+    dropTwin(el);
     savePlaces(); nav();
     repaintSheet();                           // dropTwin() above may have removed a saved row
     await fc;
@@ -1328,6 +1346,7 @@ async function locate(silent) {
     if (!late) nmP.then(nm2 => {              // answered too late to hold the screen
       if (!nm2 || el.lat !== lat || el.lon !== lon) return;
       el.name = nm2.name; el.sub = nm2.sub;
+      dropTwin(el);                           // a late name can reveal a saved copy too
       savePlaces(); nav();
       repaintSheet();                         // the saved row's name just changed under the sheet
       if (cur === places.indexOf(el)) renameVisible(el);
@@ -1367,11 +1386,19 @@ function fallbackPlace() {
   // No permission: keep the app useful with a sensible default the user can change.
   const el = places.find(p => p.myLoc);
   if (!el || hasFix(el)) return;
-  const fb = { name: 'New Delhi', sub: 'India', lat: 28.6139, lon: 77.2090, id: 'c28.6139,77.2090' };
+  const fb = { name: 'New Delhi', sub: 'India', lat: 28.6139, lon: 77.2090, id: pid({ lat: 28.6139, lon: 77.2090 }) };
   /* With New Delhi already saved, filling the pinned row with the same
      coordinates left two identical "New Delhi" rows in the list and cost one of
-     the five slots. The pinned row is dropped and the saved one is selected. */
-  const twin = places.findIndex(p => p !== el && p.id === fb.id);
+     the five slots. The pinned row is dropped and the saved one is selected.
+     The saved copy was looked for by an id written here by hand — four decimals,
+     "c28.6139,77.2090" — while every other place is keyed by pid() at three
+     ("c28.614,77.209"), so the match only ever found a row an earlier fallback
+     had written: a New Delhi the reader had saved from search was not
+     recognised, and refusing the location prompt put "New Delhi" in the list
+     twice. The key is minted with pid() like every other place, and the copy is
+     looked up with samePlace(), so a row saved under either spelling (or an
+     older build's four-decimal id) is merged rather than duplicated. */
+  const twin = places.findIndex(p => p !== el && samePlace(p, fb));
   let target = el;
   if (twin >= 0) {
     target = places[twin];
