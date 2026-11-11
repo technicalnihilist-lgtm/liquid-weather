@@ -2620,6 +2620,65 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — network & API robustness (2026-11-11, 20:00 IST pass)
+- **Every repaint of the screen cancelled the city-photo lookup and started it
+  again.** `render()` calls `applyPhoto()`, which calls `fetchCityPhoto()` for a
+  city with no stored photo, and `fetchCityPhoto()` had no idea a lookup was
+  already running: it bumped `photoSeq`, aborted `photoCtl` and issued an
+  identical request. A lookup in flight for the city on screen was
+  indistinguishable from one for a city the reader had left, so the abort that
+  exists to supersede a *different* city fired on every repaint — a °C/°F
+  toggle, a trip to the Cities tab and back, the ten-minute refresh, a
+  forecast landing after its own pre-fetch. Measured in headless Chromium
+  against 1.8.14, one city with no stored photo and a 2s Commons response:
+  **1 request at load, then 2, then 3 as two unit toggles were tapped**, each
+  one cancelling the one before it (`net::ERR_ABORTED`), and the backdrop stayed
+  empty until the reader stopped touching the screen; on a slow link the lookup
+  could be restarted indefinitely, with the Commons API asked once per repaint
+  for the same file and a fresh 10s deadline each time. The same run on this
+  build: **1 request, no cancellation, the photo painted at the usual time.**
+  The lookup in flight is now remembered by the city it belongs to (`photoKey`,
+  cleared in a `finally` when it settles, answered or not), and a render for
+  that same city leaves it alone. A request for a different city still
+  supersedes it, which is what `photoSeq` and the abort are for: measured on
+  this build, a second city asked while Mumbai's lookup was out made 2 requests
+  and aborted 1, exactly as before; and with Commons answering 500 the failure
+  is still remembered for five minutes and the marker is still released, so the
+  next render after the window asks again.
+- Version bumped to 1.8.15 (`versionCode 59`), same signing key, so it installs
+  over 1.8.14; `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `39fb9deb…`), the APK was rebuilt from it with `android/build.sh`
+  (JDK 17 + build-tools 34.0.0), bundles that same page, carries `versionCode
+  59` / `versionName 1.8.15` (`verify_apk.py` agrees on all three), and
+  `CHECKSUMS.txt` carries the new digest (`7447e38a…`). `apksigner
+  verify --print-certs` still reports the project key (`2035d69f…`, `CN=Liquid
+  Weather`).
+
+### Notes
+- No visual change: the edit touches only `fetchCityPhoto()`'s bookkeeping —
+  no markup, no style, no timing constant. For the same payload, `#main`'s
+  markup is byte-identical to 1.8.14's, the visible text is identical, the
+  `--k/--glass/--blur/--dp/--pr/--cc` variables are identical, and the computed
+  styles of 16 static elements (bar, hero, temperature, condition, cards, the
+  hourly strip, a day row, the UV grid, the unit button, the range bar, the
+  sunrise line) match on all 20 properties sampled.
+- Verified: `node --check` on the page's script; a headless Chromium load with
+  mocked forecast, geocoder, Commons and image responses reporting zero page
+  errors and zero console errors; 140 random actions over the tabs, the sheet,
+  searches, picks, removals, the unit toggle, refresh, the settings slider and
+  Escape — once clean, once with 10% of every API response replaced by a 500 and
+  6% by an HTML sign-in page — leaving no page error, no `NaN`/`undefined` in
+  `#main` and no stuck "Searching…"; and the before/after request counts above.
+- Left alone deliberately: `showPhoto()` still sets `img.src` with no way to
+  cancel it, so a photo superseded by a newer city finishes downloading (a
+  cancelled `<img>` needs its `src` cleared, which fires an error event on a
+  layer that is being kept deliberately quiet — worth doing, but it needs its
+  own proof); a retried response's body is not consumed or cancelled in
+  `getJSON()`, which no measurement here could tie to a real cost; and the
+  `online`/`offline` listener noted by the 00:00 pass is still absent for the
+  same reason it was then — repainting on a link event is a behaviour decision,
+  not a bug fix.
+
 ### Fixed — accessibility & semantics (2026-11-11, 18:00 IST pass)
 - **Focus on the hourly strip was thrown away by the next render.** The strip is
   a scroll container with no focusable children, so Chrome puts it in the tab

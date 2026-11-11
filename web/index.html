@@ -373,6 +373,8 @@ function prunePhotos() {
   savePhotos(dead);
 }
 let cityPhoto = null, scenePhotoNow = null, photoSeq = 0, photoCtl = null, photoToken = 0;
+/* Which city the lookup in flight belongs to (see fetchCityPhoto). */
+let photoKey = '';
 const photoCtx = { day: true, cov: .5 };
 const photoKeyFor = p => p ? (p.id || (p.lat + ',' + p.lon)) : '';
 /* A lookup that could not be made is deliberately not cached as "no photo"
@@ -466,11 +468,26 @@ function fetchCityPhoto(p, key) {
   if (!term || /^my location$/i.test(term)) return;          // nothing to look up
   /* asked recently and got no answer: leave the running lookup, if any, alone */
   if (photoFail[key] && mono() - photoFail[key] < PHOTO_RETRY_MS) return;
+  /* The lookup already running for this same city is left alone. Every repaint
+     of the screen calls this — a unit toggle, a trip to the Cities tab and
+     back, the ten-minute refresh, a city's forecast landing — and the lookup
+     in flight for the city on screen was indistinguishable from a lookup for a
+     city the reader had left, so each repaint bumped photoSeq, aborted the
+     request and started an identical one: measured in headless Chromium
+     against 1.8.14 with a 2s Commons response, one city with no stored photo
+     issued one request at load and a fresh one per °C/°F toggle (1 → 2 → 3),
+     each cancelling the one before it, so a reader toggling units — or
+     switching tabs — while the photo was being found kept restarting the
+     lookup and the backdrop stayed empty until they stopped, with the Commons
+     API asked once per repaint for the same file. A request for a *different*
+     city still supersedes it, which is what photoSeq and the abort are for. */
+  if (photoCtl && photoKey === key && !photoCtl.signal.aborted) return;
   const seq = ++photoSeq;
   if (photoCtl) photoCtl.abort();
   const ctl = new AbortController();
-  photoCtl = ctl;
+  photoCtl = ctl; photoKey = key;
   (async () => {
+   try {
     let r = null, failed = false;
     try { r = await commonsCityPhoto(term + ' skyline', ctl.signal); } catch (e) { failed = true; }
     if (!r && !failed && !ctl.signal.aborted) {
@@ -495,6 +512,11 @@ function fetchCityPhoto(p, key) {
       showPhoto(cityPhoto.u, photoCtx.day, photoCtx.cov);
       paintCredit();
     }
+   } finally {
+    /* the lookup is over, answered or not: the next render for this city must
+       be free to start a new one */
+    if (photoCtl === ctl) { photoCtl = null; photoKey = ''; }
+   }
   })();
 }
 /* Called by every render: shows the cached city photo, or the sky for this
