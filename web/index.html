@@ -1722,7 +1722,7 @@ function render(p, w) {
   <div class="bar"><button class="loc" id="openSearch" title="Change city"><span>📍 ${esc(p.name)}${p.sub ? ', ' + esc(p.sub) : ''}</span></button><span class="ub"><button class="u glass" id="unit">°${F ? 'F' : 'C'}</button></span></div>
   <div class="hero"><h1>${esc(p.name)}</h1><div class="temp">${T(c.temperature_2m)}°</div><div class="cond">${esc(desc)}</div><div class="hl">H:${T(hiToday)}°  L:${T(loToday)}°</div></div>
   <div class="card glass"><div class="sum">${esc(summarise(w, cond, c.weather_code))}${sun.rise && sun.set ? `<div class="sunline">🌅 Sunrise ${sun.rise} · 🌇 Sunset ${sun.set}</div>` : ''}</div></div>
-  <div class="card glass"><div class="lbl">🕐 Hourly forecast</div><div class="hrs">${hours}</div></div>
+  <div class="card glass"><div class="lbl">🕐 Hourly forecast</div><div class="hrs" role="group" aria-label="Hourly forecast">${hours}</div></div>
   <div class="card glass"><div class="lbl">📅 7-day forecast</div>${days}</div>
   <div class="grid">
     <div class="card glass"><div class="lbl">☀️ UV index</div><b>${uv.toFixed(0)}</b><span>${uvT}</span></div>
@@ -1929,8 +1929,18 @@ navEl.onclick = e => {
 const sheet = $('#sheet'), qEl = $('#q'), listEl = $('#shList'), shStatus = $('#shStatus');
 let stT, qTimer, qSeq = 0, searchCtl = null;   // qSeq: every keystroke, open and close invalidates older searches
 let composing = false;                        // an input method is still building the text (see the handlers below)
+/* Which control the sheet was opened from, and whether it was left by picking a
+   city. closeSheet() always sent focus to the city button in the top bar, so a
+   reader who opened the sheet from the Cities tab with the keyboard and closed
+   it again with Escape or ✕ was moved out of the nav into the page, to a control
+   they never came from — the opposite of the "return focus to the control that
+   opened it" rule every other panel in the app follows. A picked city still
+   lands on the top bar, because that is the screen the reader just asked for. */
+let sheetOpener = null, sheetPicked = false;
 function openSheet() {
   tab = 'cities'; nav();
+  sheetOpener = (document.activeElement && document.activeElement !== document.body) ? document.activeElement : null;
+  sheetPicked = false;
   sheet.classList.add('open');
   sheet.removeAttribute('inert');
   sheet.setAttribute('aria-hidden', 'false');
@@ -1966,12 +1976,20 @@ function closeSheet() {
   if (mEl) mEl.removeAttribute('inert');        // before focusing, or the focus call is ignored
   qEl.blur();
   if (hadFocus) {
-    const back = $('#openSearch');
+    /* opened from the nav (the Cities tab) and dismissed without a pick: go back
+       to that tab. Everything else keeps the top-bar button. */
+    const opener = (!sheetPicked && sheetOpener && navEl.contains(sheetOpener) && document.contains(sheetOpener))
+      ? sheetOpener : null;
+    const back = opener || $('#openSearch');
     if (back) {
       try { back.focus({ preventScroll: true }); } catch (e) {}
       /* the newly picked city's forecast is still loading and will replace
          this button, so ask the render to put focus back on it */
       holdFocusOn(back.id);
+    }
+    if (opener) {
+      sheetOpener = null;                        // one dismissal, one return
+      sheetPicked = false;
     }
   }
 }
@@ -2149,7 +2167,26 @@ function row(o) {
 }
 
 let lastResults = [];      // last painted results, reused when the sheet is repainted (after a removal)
+/* The sheet is repainted from under the keyboard: a geocoder answer landing,
+   the pinned row's name arriving, another document's saved-list write, a
+   removal. Only removeSaved() ever put focus back, so a reader who had tabbed
+   into the list while "Searching…" was on screen lost their place the moment
+   the results were painted — focus dropped to <body> and the next Tab started
+   again from the top of the page, outside the sheet. The focused control is
+   named by its own attributes (never by its position, which the repaint is
+   free to change) and found again in the new markup; if the thing they were on
+   is gone, the first control of the sheet takes the focus rather than the
+   document. */
+function sheetFocusKey() {
+  const a = document.activeElement;
+  if (!a || a === document.body || !listEl.contains(a)) return '';
+  if (a.id) return '#' + a.id;
+  for (const at of ['data-go', 'data-rm2', 'data-rm'])
+    if (a.hasAttribute(at)) return '[' + at + '="' + a.getAttribute(at) + '"]';
+  return '';
+}
 function paintSheet(q, results) {
+  const focusKey = sheetFocusKey();
   /* removeSaved() repaints the sheet with the query still in the box; it used to
      pass no results at all, so `results.length` threw and the list kept showing
      the city that had just been deleted. */
@@ -2190,6 +2227,10 @@ function paintSheet(q, results) {
       : 'No place found for “' + term + '”';
   }
   listEl.innerHTML = html;
+  if (focusKey) {
+    const back = listEl.querySelector(focusKey) || listEl.querySelector('#shLoc');
+    if (back) { try { back.focus({ preventScroll: true }); } catch (e) {} }
+  }
 }
 /* The saved rows the sheet is showing are only as fresh as its last paint, and
    the list they are indexed against is rewritten in places the sheet never hears
@@ -2364,6 +2405,7 @@ function addPlace(o) {
     }
   }
   dirNext = cur >= prevCur ? 1 : -1;
+  sheetPicked = true;                       // the reader chose this screen, so focus goes to it
   savePlaces(); nav(); closeSheet();
   $('#main').scrollTop = 0;
   show();
@@ -2405,7 +2447,7 @@ listEl.onclick = e => {
   }
   const go = e.target.closest('[data-go]');
   if (go) {
-    selectCity(+go.dataset.go); closeSheet();
+    selectCity(+go.dataset.go); sheetPicked = true; closeSheet();
     return;
   }
   if (e.target.closest('#shRefresh')) {
@@ -2635,6 +2677,13 @@ function openSettings() {
   if (first) { try { first.focus({ preventScroll: true }); } catch (e) {} }
 }
 function closeSettings() {
+  /* setTab() calls this on every switch away from the panel, whether or not the
+     panel was ever open. It moved focus unconditionally, so opening the search
+     sheet from the Cities tab first parked focus on the Weather tab — the sheet
+     then recorded that as the control it was opened from, and closing it sent
+     the reader to a tab they had never touched. Nothing to return to when the
+     panel was already closed. */
+  const wasOpen = setEl.classList.contains('open');
   if (tab === 'set') { tab = 'home'; nav(); }
   setEl.classList.remove('open'); scrim.classList.remove('open');
   setEl.setAttribute('aria-hidden', 'true');
@@ -2644,7 +2693,7 @@ function closeSettings() {
   const back = setReturnFocus && document.contains(setReturnFocus) && !setReturnFocus.closest('#set')
     ? setReturnFocus : navItems.querySelector('button[data-tab="home"]');
   setReturnFocus = null;
-  if (back) { try { back.focus({ preventScroll: true }); } catch (e) {} }
+  if (back && wasOpen) { try { back.focus({ preventScroll: true }); } catch (e) {} }
 }
 for (const key of ['tr', 'bl', 'bo', 'dp', 'pr']) {
   const inp = $('#r_' + key);

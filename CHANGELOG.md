@@ -2620,6 +2620,89 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — accessibility & semantics (2026-11-11, 08:00 IST pass)
+- **The search sheet threw keyboard focus away every time it repainted itself.**
+  `paintSheet()` replaces the whole list with `innerHTML`, which destroys the
+  control that had focus. Only `removeSaved()` ever put focus back, so every
+  other repaint — a geocoder answer landing, the pinned row's name arriving,
+  another document's saved-list write — dropped focus to `<body>`. The common
+  case is the answer: type a query, Tab into the sheet while "Searching…" is on
+  screen, and the results replace the list under the keyboard. Measured in
+  headless Chromium with the geocoder held for 1.8s, focus on "Use my current
+  location" and the answer released: `document.activeElement` was `BODY` after
+  the paint, so the next Tab started again from the top of the page, outside the
+  sheet, and the list could not be reached without walking the whole document
+  again. `paintSheet()` now names the focused control by its own attributes
+  before the list is replaced (`#shLoc`, `#shRefresh`, or the row's
+  `data-go`/`data-rm2`/`data-rm` value — never its position, which the repaint
+  is free to change) and puts focus back on the same control afterwards; if the
+  thing they were on is gone, the sheet's first control takes the focus rather
+  than the document. Same run on this build: focus is still on
+  "Use my current location" after the results are painted.
+- **Closing the sheet moved focus out of the nav.** The sheet's own rule is
+  "return focus to the control that opened it", but `closeSheet()` always aimed
+  at the city button in the top bar. A reader who opened the sheet from the
+  Cities tab with the keyboard and closed it with Escape or ✕ was therefore moved
+  out of the nav and into the page, onto a control they had never touched — and
+  from there Tab walked the forecast instead of the tabs. Two causes, both fixed:
+  `setTab('cities')` calls `closeSettings()` first, and `closeSettings()` moved
+  focus to the Weather tab whether or not the panel was ever open (so the sheet
+  recorded the Weather tab as its opener); and `closeSheet()` had no idea what it
+  was opened from. `closeSettings()` now only moves focus when the panel was
+  actually open, `openSheet()` records the control it was opened from, and a
+  dismissal that is not a city pick returns focus there. Measured: Escape or ✕
+  after opening from the Cities tab left focus on "openSearch" in `#main` before,
+  on the Cities tab now; picking a city, dismissing a sheet opened by tapping the
+  city name, removing a saved row and closing the settings panel all land exactly
+  where they did (measured on both builds, same answers).
+- **The hourly strip was a focusable control with no accessible name.** Chrome
+  puts a scroll container in the tab order when it holds no focusable children,
+  so the strip is the third stop on the forecast screen — and it was a bare
+  `<div>`: a screen reader announced an unnamed group and nothing about what the
+  eight cells were, while the visible heading right above it says "Hourly
+  forecast". It now carries `role="group"` and `aria-label="Hourly forecast"`,
+  the same words as the heading. Chrome's accessibility tree: before, a focusable
+  node with an empty name; now `group "Hourly forecast"`. Tab order is unchanged
+  (city button, unit button, strip, tabs), and the attributes paint nothing.
+- Version bumped to 1.8.13 (`versionCode 57`), same signing key, so it installs
+  over 1.8.12; `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `713b0358…`), the APK was rebuilt from it with `android/build.sh`
+  (JDK 17 + build-tools 34.0.0), bundles that same page, carries `versionCode
+  57` / `versionName 1.8.13`, and `CHECKSUMS.txt` carries the new digest
+  (`a7d40587…`). `apksigner verify --print-certs` still reports the project key
+  (`2035d69f…`, `CN=Liquid Weather`).
+
+### Notes
+- No visual change: for five payloads (clear day, cloudy day, rain at night,
+  thunderstorm, fog) the `#main` markup is identical apart from the two
+  attributes added to the strip, the computed styles of the hero, temperature,
+  condition, glass card, nav and the `--k/--glass/--blur/--dp/--pr/--cc`
+  variables are identical, and full-screen screenshots with the randomly-seeded
+  layers (`#fx`, `#clouds`, `#photo`) hidden are byte-identical between 1.8.12
+  and this build.
+- Verified: `node --check` on the page's script; a headless Chromium load with
+  mocked storage, forecast, geocoder, Commons and image responses reporting zero
+  console messages and zero page errors; 140 random actions over the tabs, the
+  sheet, searches, picks, removals, the unit toggle, the settings sliders and
+  Escape with every ninth API response replaced by a 500, a 429 with
+  `Retry-After`, `{"current":{}}`, non-JSON or a sign-in page, leaving no console
+  error, no page error, no `NaN`/`undefined` in `#main` and no stuck
+  "Searching…"; and the three fixes proved by the before/after focus and
+  accessibility-tree readings above.
+- Left alone deliberately: **text contrast over the scenes.** Every text style
+  was measured against its own painted background on all six scenes by day and
+  night (108 readings): all pass 4.5:1 except the top bar's city name on the fog
+  scene, which fell to **2.97:1** where a bright drifting cloud sat behind it
+  (next lowest: 5.86:1). Fixing it means a text shadow or a darker glass under
+  the bar — a visible change, so it is written down instead. Also left: the 7-day
+  rows announce "Today ☀️ 21° 31°" with no low/high words and the range bar
+  carries no accessible value; the sheet's "Saved places" / "Results" / "Popular"
+  labels are styled as headings but are not headings, so a screen reader cannot
+  jump between them; and the ✕ is a focusable `role="button"` span nested inside
+  the row's `<button>` (invalid nesting, though Chrome exposes it with its own
+  name and Enter/Space works) — restructuring the rows risks the row layout for a
+  defect no reader can currently hear or press wrongly.
+
 ### Fixed — network & API robustness (2026-11-11, 00:00 IST pass)
 - **The reverse-geocode pair was the one request in the app that could not be
   cancelled, so an abandoned location request kept talking to both geocoders.**
