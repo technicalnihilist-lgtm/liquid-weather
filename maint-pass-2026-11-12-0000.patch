@@ -1,0 +1,179 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 6bcc0f7..606380e 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -3180,6 +3180,75 @@ one more, found on the day's last pass.
+ Ideas that would be welcome: a language switch, sleet/haze scenes,
+ a home-screen widget, and a "feels like" curve on the hourly strip.
+ 
++## [1.9.1] — 2026-11-12
++
++### Fixed
++- **A refused location prompt put "New Delhi" in the saved list twice.** When
++  the position request fails and the pinned "My Location" row has no fix,
++  `fallbackPlace()` fills it with New Delhi — but not before looking for a saved
++  New Delhi to merge it into, and that lookup compared ids with a string written
++  out by hand, `'c28.6139,77.2090'` (four decimals). Every other place is keyed
++  by `pid()` at three decimals (`'c28.614,77.209'`), so the only row it could
++  ever recognise was one an earlier fallback had written itself: a New Delhi the
++  reader had saved from search was not found, and refusing the prompt (or a
++  device with no GPS, or the 15s watchdog) left "New Delhi" listed twice and cost
++  one of the five slots. The fallback row is now keyed with `pid()` like every
++  other place and the saved copy is looked up with `samePlace()`, the rule
++  `addPlace()`, `row()` and `repairSaved()` have always used, so a row saved
++  under either spelling — including an older build's four-decimal id — is merged
++  instead of duplicated.
++- **"Use my current location" in the city you had already saved left it in the
++  list twice.** `dropTwin()` recognised the duplicate by id alone, and the keys
++  are 3-decimal coordinates: the device's fix for Mumbai (19.0550, 72.8692) is
++  2.4 km from the bundled Mumbai a reader saved (19.076, 72.8777), so the ids
++  differed, nothing was merged, and the Cities sheet showed Mumbai twice with a
++  fifth city refused — the same defect the search path had (1.6.x) but on the
++  location path. The merge now uses `samePlace()` as well: an exact key still
++  merges immediately, and the name-based half of the rule is applied once more
++  when the geocoder has said which city the fix is in — on both the on-time and
++  the late-name paths, since the row is still called "My Location" until then.
++
++### Notes
++- No visual change: for the same payload the rendered `#main` HTML is
++  byte-identical to 1.9's in all ten scenarios below, including both fixed ones
++  — the only other difference in saved state is the fallback row's id string,
++  which is never displayed.
++- Verified: `node --check` on the page's script; a DOM run of `web/index.html`
++  with mocked storage, geolocation, forecast and geocoder responses reporting
++  **zero console errors and zero page errors** in ten scenarios (denied, no
++  geolocation API, NaN position, geocoder down, granted fix, fix on the exact
++  saved key, fix 2.4 km from a saved city, fix 1200 km from a saved city,
++  denial with New Delhi saved under each of the two id spellings). Targeted
++  check, old page against new: with New Delhi saved from search and the prompt
++  refused, 1.9 ends with two rows `c28.6139,77.2090 | c28.614,77.209` and 1.9.1
++  with one (`c28.614,77.209`); with Mumbai saved and a fix 2.4 km away, 1.9 ends
++  with `c19.055,72.869 | c19.076,72.878` and 1.9.1 with one row, still on
++  screen. The late-name path was driven with a geocoder that answers after the
++  2.5s budget: 1.9 ends with two Mumbai rows, 1.9.1 with one. Superseded
++  requests, a slow fix and an open Cities sheet were re-run for console errors
++  (none).
++- Headless Chromium could not be used for the load check on this pass: the
++  binary in this environment dies at startup with `SIGTRAP` (exit 133) even for
++  `--version`, before it prints anything, so the DOM checks ran in jsdom with
++  the same mocks (fetch, `navigator.geolocation`, canvas 2D) the earlier passes
++  used in Chromium. That is a limitation of this sandbox, not of the page.
++- `versionCode 61` / `versionName 1.9.1` in `android/AndroidManifest.xml` (up
++  from 60 / 1.9), same signing key. The APK was rebuilt from this tree with
++  `android/build.sh` (JDK 17, build-tools 34.0.0, platform 34); it bundles
++  `assets/index.html` byte-identical to `web/index.html` (SHA-256
++  `d3902694…`), carries `versionCode 61` / `versionName 1.9.1`, and
++  `.github/scripts/verify_apk.py` agrees on all three. `CHECKSUMS.txt` carries
++  the digest of the APK committed with this entry, and `apksigner
++  verify --print-certs` still reports the project key (`2035d69f…`,
++  `CN=Liquid Weather`). Nothing is released yet: the day's release is cut from
++  the 22:00 IST pass, as usual.
++- Left alone deliberately: a second `onGeolocationPermissionsShowPrompt` raised
++  while the first is still pending still overwrites the stored callback (the
++  page's 15s watchdog covers the request it abandons, as recorded in 1.4.5), and
++  a pinned row's coordinates are still never refreshed after the first fix — the
++  ten-minute auto-refresh re-fetches the forecast, not the position — because
++  changing when a permission-gated call happens is a decision, not a bug fix.
++
+ ## [1.9] — 2026-11-11
+ 
+ The day's release, cut from the 22:00 IST pass. It publishes the whole run of
+@@ -3256,7 +3325,8 @@ First public release.
+ - APK is self-signed; Android shows the "unknown developer" prompt on install.
+ - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
+ 
+-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.9...HEAD
++[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.9.1...HEAD
++[1.9.1]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.9.1
+ [1.9]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.9
+ [1.5.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.5.2
+ [1.5]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.5
+diff --git a/android/AndroidManifest.xml b/android/AndroidManifest.xml
+index a661af8..fd0037a 100644
+--- a/android/AndroidManifest.xml
++++ b/android/AndroidManifest.xml
+@@ -1,8 +1,8 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+     package="com.liquidweather.app"
+-    android:versionCode="60"
+-    android:versionName="1.9">
++    android:versionCode="61"
++    android:versionName="1.9.1">
+ 
+     <uses-permission android:name="android.permission.INTERNET" />
+     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+diff --git a/web/index.html b/web/index.html
+index c7a8719..0d9d2b5 100644
+--- a/web/index.html
++++ b/web/index.html
+@@ -1238,11 +1238,22 @@ async function reverseName(lat, lon, signal) {
+    list. The pinned row is keyed by its coordinates, so the saved copy and the
+    pinned row end up with the same id and the same name, and the Cities list
+    showed that city twice: two of the five slots for one place. The duplicate
+-   copy is dropped, and `cur` stays on the row it was pointing at. */
++   copy is dropped, and `cur` stays on the row it was pointing at.
++   The copies are recognised by the app's own rule, not by their key alone. Two
++   rows are the same place when samePlace() says so — same key, or the same name
++   within 25 km — which is what addPlace(), row() and repairSaved() have always
++   used. Comparing ids missed the case this path exists for: the device's fix for
++   Mumbai (19.0550, 72.8692) is 2.4 km from the bundled Mumbai a reader saved
++   (19.076, 72.8777), so the keys differ, the merge never fired and "Use my
++   current location" in the city you already saved left Mumbai in the list twice
++   — two of the five slots for one place, and a fifth city refused. An exact key
++   match still merges here; the name-based half of the rule can only fire once
++   the row has been named, which is why locate() calls this again when the
++   geocoder answers (see there). */
+ function dropTwin(keep) {
+   let onScreen = false;
+   for (let i = places.length - 1; i >= 0; i--) {
+-    if (places[i] === keep || places[i].id !== keep.id) continue;
++    if (places[i] === keep || !samePlace(places[i], keep)) continue;
+     /* The copy being merged away can be the row on screen: a fix that lands
+        after the reader has already picked that city from the sheet (a slow fix
+        or a permission dialog is exactly when this happens) used to drop the
+@@ -1320,6 +1331,13 @@ async function locate(silent) {
+        name when it turns up. */
+     const nm = late || { name: 'My Location', sub: `${lat.toFixed(2)}, ${lon.toFixed(2)}` };
+     el.name = nm.name; el.sub = nm.sub;
++    /* And once more now that the row has a name. dropTwin() above ran while the
++       row was still called "My Location", so only its key could match a saved
++       copy; the rule the rest of the app uses — same name, within 25 km — can
++       only be applied here, where the geocoder has said which city the fix is
++       in. Without it a fix 2.4 km from the city the reader had already saved
++       left that city in the list twice (see dropTwin()). */
++    dropTwin(el);
+     savePlaces(); nav();
+     repaintSheet();                           // dropTwin() above may have removed a saved row
+     await fc;
+@@ -1328,6 +1346,7 @@ async function locate(silent) {
+     if (!late) nmP.then(nm2 => {              // answered too late to hold the screen
+       if (!nm2 || el.lat !== lat || el.lon !== lon) return;
+       el.name = nm2.name; el.sub = nm2.sub;
++      dropTwin(el);                           // a late name can reveal a saved copy too
+       savePlaces(); nav();
+       repaintSheet();                         // the saved row's name just changed under the sheet
+       if (cur === places.indexOf(el)) renameVisible(el);
+@@ -1367,11 +1386,19 @@ function fallbackPlace() {
+   // No permission: keep the app useful with a sensible default the user can change.
+   const el = places.find(p => p.myLoc);
+   if (!el || hasFix(el)) return;
+-  const fb = { name: 'New Delhi', sub: 'India', lat: 28.6139, lon: 77.2090, id: 'c28.6139,77.2090' };
++  const fb = { name: 'New Delhi', sub: 'India', lat: 28.6139, lon: 77.2090, id: pid({ lat: 28.6139, lon: 77.2090 }) };
+   /* With New Delhi already saved, filling the pinned row with the same
+      coordinates left two identical "New Delhi" rows in the list and cost one of
+-     the five slots. The pinned row is dropped and the saved one is selected. */
+-  const twin = places.findIndex(p => p !== el && p.id === fb.id);
++     the five slots. The pinned row is dropped and the saved one is selected.
++     The saved copy was looked for by an id written here by hand — four decimals,
++     "c28.6139,77.2090" — while every other place is keyed by pid() at three
++     ("c28.614,77.209"), so the match only ever found a row an earlier fallback
++     had written: a New Delhi the reader had saved from search was not
++     recognised, and refusing the location prompt put "New Delhi" in the list
++     twice. The key is minted with pid() like every other place, and the copy is
++     looked up with samePlace(), so a row saved under either spelling (or an
++     older build's four-decimal id) is merged rather than duplicated. */
++  const twin = places.findIndex(p => p !== el && samePlace(p, fb));
+   let target = el;
+   if (twin >= 0) {
+     target = places[twin];
