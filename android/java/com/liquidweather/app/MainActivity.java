@@ -15,6 +15,8 @@ import android.webkit.WebViewClient;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Liquid Weather — a thin native shell around the self-contained HTML app.
@@ -30,8 +32,25 @@ public class MainActivity extends Activity {
     private static final int REQ_LOCATION = 1001;
 
     private WebView web;
-    private GeolocationPermissions.Callback geoCallback;
-    private String geoOrigin;
+    /* Every prompt the page has open, not just the newest one. Two
+       getCurrentPosition() calls can be in flight at once — the silent locate()
+       the page runs at boot, and a tap on "Use my current location" while that
+       prompt is still up — and each reaches this activity as its own
+       onGeolocationPermissionsShowPrompt(). A single stored callback pair kept
+       only the later request: the earlier callback was overwritten and never
+       invoked, so the WebView never answered that getCurrentPosition(), and the
+       page sat on its own watchdog (15s, or 35s while a prompt is pending)
+       before giving up — toasting "Could not reach your location" and turning
+       the pinned row into a saved New Delhi while a fix was available. The
+       callbacks are kept in arrival order and every one of them gets the same
+       answer. */
+    private final List<GeolocationPermissions.Callback> geoCallbacks = new ArrayList<>();
+    private final List<String> geoOrigins = new ArrayList<>();
+    /* One system permission request at a time. requestPermissions() issued
+       while another is still being answered is dropped by the platform (its
+       result never arrives), so a second prompt joins the list above and waits
+       for the answer to the request that is already out. */
+    private boolean geoAsking = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,12 +89,15 @@ public class MainActivity extends Activity {
                     callback.invoke(origin, true, true);
                     return;
                 }
-                geoCallback = callback;
-                geoOrigin = origin;
-                requestPermissions(new String[]{
-                        Manifest.permission.ACCESS_FINE_LOCATION,
-                        Manifest.permission.ACCESS_COARSE_LOCATION
-                }, REQ_LOCATION);
+                geoCallbacks.add(callback);
+                geoOrigins.add(origin);
+                if (!geoAsking) {
+                    geoAsking = true;
+                    requestPermissions(new String[]{
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                    }, REQ_LOCATION);
+                }
             }
         });
 
@@ -104,13 +126,23 @@ public class MainActivity extends Activity {
             if (r == PackageManager.PERMISSION_GRANTED) granted = true;
         }
         if (!granted) granted = hasLocationPermission();
-        if (geoCallback != null) {
-            // Even when denied we hand control back to the page: it falls back to
-            // a default city and the user can pick one from the search sheet.
-            geoCallback.invoke(geoOrigin, granted, false);
-            geoCallback = null;
-            geoOrigin = null;
+        // Even when denied we hand control back to the page: it falls back to
+        // a default city and the user can pick one from the search sheet.
+        answerGeo(granted);
+    }
+
+    /* Answers every prompt that is still waiting, oldest first, and forgets
+       them. A callback that was never invoked leaves the page's
+       getCurrentPosition() unanswered for good, so this is the only exit for a
+       prompt — granted, denied, or the activity going away. */
+    private void answerGeo(boolean granted) {
+        geoAsking = false;
+        for (int i = 0; i < geoCallbacks.size(); i++) {
+            GeolocationPermissions.Callback callback = geoCallbacks.get(i);
+            if (callback != null) callback.invoke(geoOrigins.get(i), granted, false);
         }
+        geoCallbacks.clear();
+        geoOrigins.clear();
     }
 
     private String readAsset(String name) {
@@ -160,13 +192,10 @@ public class MainActivity extends Activity {
             /* A location prompt that was still up when the activity went away
                leaves its callback stored here and the page's geolocation call
                unanswered: the callback (and through it the WebView) is held
-               until the activity is collected. Hand it back as a refusal — the
-               same answer a denied prompt gives — and drop it. */
-            if (geoCallback != null) {
-                geoCallback.invoke(geoOrigin, false, false);
-                geoCallback = null;
-                geoOrigin = null;
-            }
+               until the activity is collected. Hand back a refusal — the same
+               answer a denied prompt gives — to every prompt still waiting,
+               not just the newest one, and drop them. */
+            answerGeo(false);
             /* destroy() is only safe once the WebView is out of the view tree:
                called while it is still attached, the compositor and the native
                AwContents stay tied to a window that is being torn down, and the
