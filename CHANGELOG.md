@@ -2620,6 +2620,61 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — search & geocoding (2026-11-12, 16:00 IST pass)
+- **A country query listed the same place twice, once under each of its two
+  names.** The bundled rows a country query adds ("Japan" → Tokyo, Osaka,
+  Sapporo) were merged with the geocoder's answer by folded *name* alone, while
+  every other pair of rows in the sheet — two geocoder rows, two saved rows, a
+  result and a saved row — is compared with `samePlace()`/`sameLabel()`, the
+  rule for "two rows a reader cannot tell apart". Name alone misses the case
+  that matters: the bundled **Delhi** sits at 28.6139, 77.209, exactly where
+  Open-Meteo puts **New Delhi**, so typing "india" listed that one point twice
+  — "Delhi, India" and "New Delhi, Delhi, India". Both rows were flagged as the
+  saved place (📍, because `samePlace()` says they are the same place) and both
+  carried a ✕ that deleted the same saved row, so the sheet showed one place as
+  two, with two delete controls for it. The bundled rows are now also dropped
+  when they are the same place as a row already listed, using the same
+  `samePlace()`/`sameLabel()` pair `dedupe()` applies to the geocoder's own
+  rows; rows that merely share a name keep exactly the behaviour they had.
+- Version bumped to 1.9.3 (`versionCode 63`), same signing key, so it installs
+  over 1.9.2; `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `43d5df71…`), the APK was rebuilt from it with `android/build.sh`
+  (JDK 17 + build-tools 34.0.0 + platform 34), bundles that same page, carries
+  `versionCode 63` / `versionName 1.9.3` (`.github/scripts/verify_apk.py` agrees
+  on all three), and `CHECKSUMS.txt` carries the new digest (`ff91d34c…`), as
+  does the `sha256sum` block in `README.md` (checked by `verify_docs.py`).
+  `apksigner verify --print-certs` still reports the project key (`2035d69f…`,
+  `CN=Liquid Weather`).
+
+### Notes
+- No visual change: the edit is one filter inside `search()`; no markup, CSS,
+  wording, colours, spacing, gradients, glass values or animation timings were
+  touched, and the row that a reader sees is the geocoder's own (same title,
+  same subtitle, same icon, same position in the list) — only the duplicate
+  above it is gone.
+- Verified: `node --check` on the page's script; a headless Chromium load of
+  `web/index.html` at an `https` origin with mocked forecast, geocoder,
+  Nominatim and Commons responses reporting **zero console errors and zero page
+  errors**; and the fix proved old-against-new with the same mocks and
+  Open-Meteo's real answers for eight queries — "india" 8 rows → 7 (the
+  duplicate "Delhi, India" gone, status "8 results" → "7 results"), while
+  "japan", "united states", "australia", "singapore", "korea", "mumbai" and
+  "mumbai india" came back **identical in rows, order, subtitles, icons and
+  status text**, so the merge rule changed nothing else.
+- Left alone deliberately: (1) **the country list still matches only the start
+  of a country's name** (`countryMatches()`), so "korea" or "emirates" gets no
+  bundled cities from it and relies on the wider token rule in
+  `localMatches()` — widening it changes what a country query returns, which is
+  a behaviour decision, not a bug fix. (2) **Typing "uk" offline answers Kyiv**,
+  because the token rule matches "uk" as the start of "Ukraine"; "UK" is not a
+  country label anywhere in the bundled list, and the obvious fixes all change
+  which cities other queries find. (3) **"st." matches every US city**, for the
+  same reason ("States"). (4) **A country query still drops a geocoder row that merely
+  shares its name with a bundled one, even when it is a different city far
+  away** — that name rule is what stops the sheet printing a country's own
+  cities twice, and making it distance-aware changes what a country query
+  returns, so it waits for its own pass.
+
 ### Fixed — geolocation edge cases (2026-11-12, 10:00 IST pass)
 - **A fix that arrived inside the time the app had asked for was thrown away
   whenever the reader took a few seconds to answer the location prompt.** The

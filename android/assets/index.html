@@ -2455,7 +2455,18 @@ async function search(q) {
        with a combining dot — so it never matched the bundled "Istanbul" and the
        sheet listed the same city twice. */
     const names = new Set(list.map(o => fold(o.name)));
-    list = [...byCountry.filter(o => !names.has(fold(o.name))), ...list];
+    /* A name is not the only thing that makes two rows one place, and here it
+       was the only thing tested. The bundled Delhi sits at 28.6139, 77.209,
+       exactly where Open-Meteo puts "New Delhi", so "india" listed that point
+       twice — "Delhi, India" and "New Delhi, Delhi, India" — both flagged as
+       the saved place and both carrying a ✕ that deleted the same saved row.
+       The rows are now also compared with samePlace()/sameLabel(), the rule
+       dedupe() applies to the geocoder's own rows, so a bundled row is dropped
+       only when it is the same place as a row already listed. Rows that merely
+       share a name keep the existing behaviour, so the order and the subtitles
+       of everything on screen are unchanged. */
+    list = [...byCountry.filter(o => !names.has(fold(o.name))
+      && !list.some(k => samePlace(k, o) || sameLabel(k, o))), ...list];
   }
   if (!list.length) list = localMatches(term);          // offline / no match fallback
   if (seq !== qSeq) return;                             // a newer keystroke won
