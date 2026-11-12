@@ -33,6 +33,17 @@ jobs:
       - name: Verify the committed APK matches the sources
         run: python3 .github/scripts/verify_apk.py .
 
+      # The two checks above cover CHECKSUMS.txt and the APK, but not the third
+      # copy of the digest: the `sha256sum` output the install instructions in
+      # README.md tell a reader to compare against. Nothing read it, so it sat on
+      # 1.7's value (f8a52080…) through seven releases while CHECKSUMS.txt and
+      # the APK moved on, and every reader who followed the instructions saw
+      # "LiquidWeather.apk: FAILED" on a download that was exactly the file this
+      # repository publishes. Checked here, before anything is built, so the
+      # README cannot drift away from the APK again.
+      - name: Verify README.md advertises the published APK digest
+        run: python3 .github/scripts/verify_docs.py .
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
