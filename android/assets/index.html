@@ -1177,11 +1177,43 @@ const GEO_NAME_WAIT = 2500;
 let locSeq = 0;
 let prefCtl = null;                         // the pre-fetch the current location request started
 let nameCtl = null;                         // and the reverse-geocode pair it started
+/* The watchdog above counts from the call, but the `timeout` handed to
+   getCurrentPosition only starts once the reader has answered the permission
+   prompt. The two were therefore not the same clock, and the watchdog could
+   fire well before the deadline it exists to back up: a prompt answered after
+   ten seconds plus a first fix eight seconds later — inside the 12s the page
+   asks for, and an ordinary wait for both — arrives at eighteen, three seconds
+   after the watchdog has already given up. Giving up is not harmless: locate()
+   then calls fallbackPlace(), which turns the pinned row into a saved "New
+   Delhi" (myLoc:false), and every later launch sees a row that already has
+   coordinates and never asks for a position again, so one slow but successful
+   fix disables location for the app for good. The watchdog now asks the browser
+   once, at the start, whether that permission decision is still pending, and
+   adds this allowance when it is, so it expires after the browser's own
+   deadline instead of before it. A browser without the Permissions API, or one
+   that refuses the query, keeps the single 15s deadline exactly as before. */
+const GEO_PROMPT_ALLOW = 20000;
+function geoDecisionPending() {
+  try {
+    const perms = navigator.permissions;
+    if (!perms || typeof perms.query !== 'function') return Promise.resolve(false);
+    return perms.query({ name: 'geolocation' })
+      .then(s => !!s && s.state === 'prompt')
+      .catch(() => false);
+  } catch (e) { return Promise.resolve(false); }
+}
 function getPosition() {
   return new Promise((res, rej) => {
     if (!navigator.geolocation) return rej(new Error('unsupported'));
     let done = false;
-    const timer = setTimeout(() => { if (!done) { done = true; rej(new Error('timeout')); } }, GEO_WATCHDOG);
+    let timer = setTimeout(() => { if (!done) { done = true; rej(new Error('timeout')); } }, GEO_WATCHDOG);
+    /* the prompt is still up: the browser's own deadline has not started yet,
+       so the watchdog waits for the reader's answer plus the browser's 12s */
+    geoDecisionPending().then(pending => {
+      if (!pending || done) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => { if (!done) { done = true; rej(new Error('timeout')); } }, GEO_WATCHDOG + GEO_PROMPT_ALLOW);
+    });
     const finish = (fn, v) => { if (done) return; done = true; clearTimeout(timer); fn(v); };
     try {
       navigator.geolocation.getCurrentPosition(

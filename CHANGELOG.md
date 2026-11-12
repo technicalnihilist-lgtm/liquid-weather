@@ -2620,6 +2620,73 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — geolocation edge cases (2026-11-12, 10:00 IST pass)
+- **A fix that arrived inside the time the app had asked for was thrown away
+  whenever the reader took a few seconds to answer the location prompt.** The
+  watchdog that guarantees `getPosition()` settles counts from the call, but the
+  `timeout: 12000` handed to `navigator.geolocation.getCurrentPosition` only
+  starts once a permission decision exists, so the two were never the same
+  clock and the watchdog could fire *before* the deadline it exists to back up.
+  A prompt answered after ten seconds and a first fix eight seconds later —
+  inside the 12s the page asks for, and an ordinary wait for both — arrives at
+  eighteen, three seconds after the watchdog had given up. Giving up is not
+  harmless: `locate()` then calls `fallbackPlace()`, which rewrites the pinned
+  row as a saved "New Delhi" with `myLoc:false`, and every later launch sees a
+  row that already has coordinates and never asks for a position again — one
+  slow but successful fix disabled "My Location" for the app for good, with no
+  prompt, no retry and nothing on screen to say so. `getPosition()` now asks
+  the browser once, at the start, whether that decision is still pending
+  (`navigator.permissions.query({name:'geolocation'})`) and, when it is, allows
+  the reader's answer plus the browser's own 12s before expiring. Nothing on
+  screen changes: the same skeleton, the same toast, the same fallback — only
+  later, and only when a fix is still legitimately in flight.
+- Version bumped to 1.9.2 (`versionCode 62`), same signing key, so it installs
+  over 1.9.1; `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `1d6cf1fa…`), the APK was rebuilt from it with `android/build.sh`
+  (JDK 17 + build-tools 34.0.0 + platform 34), bundles that same page, carries
+  `versionCode 62` / `versionName 1.9.2` (`.github/scripts/verify_apk.py` agrees
+  on all three), and `CHECKSUMS.txt` carries the new digest
+  (`0f7cc77e…`), as does the `sha256sum` block in `README.md` (checked by
+  `verify_docs.py`). `apksigner verify --print-certs` still reports the project
+  key (`2035d69f…`, `CN=Liquid Weather`).
+
+### Notes
+- No visual change: the edit is inside `getPosition()` and adds one helper
+  (`geoDecisionPending()`, `GEO_PROMPT_ALLOW`); no markup, CSS, wording,
+  colours or animation timings were touched, and the expiry path still ends in
+  the same `Error('timeout')` the old watchdog produced, so the toast, the
+  fallback and the skeleton are exactly what 1.9.1 shows — only later.
+- Verified: `node --check` on the page's script; a headless Chromium load of
+  `web/index.html` at an `https` origin with mocked forecast, geocoder, Commons
+  and position responses reporting **zero console errors and zero page errors**
+  in five states (fast fix, denial, geocoder 500 on both services, a prompt
+  never answered, a fix at 18s). The fix itself was proved old-against-new with
+  the same mocks and a `navigator.permissions` stub: a prompt answered at 10s
+  with the fix at 18s leaves 1.9.1 on `New Delhi`, `myLoc:false`, with "Could
+  not reach your location" and the fix discarded, and 1.9.2 on `Pune`,
+  `myLoc:true`, with no toast and the forecast drawn. The regression cases were
+  re-run on the new build: permission already granted and no position ever
+  delivered still falls back at the 15s deadline (measured: skeleton at 14s,
+  fallback by 17s); no Permissions API at all behaves exactly as 1.9.1; a
+  denial still toasts "Location is blocked" immediately; a fast fix renders as
+  before.
+- Left alone deliberately: (1) **an unanswered prompt now holds the skeleton up
+  to 35s instead of 15s.** That is the price of not expiring before the
+  browser's own deadline, it only happens while the system dialog is up, and
+  the screen is still escapable — the city name in the skeleton opens the
+  search sheet. (2) **A failed location attempt still turns the pinned row into
+  a saved "New Delhi"**, including a timeout that is not a permission answer;
+  keeping the row pinned instead would change what the Cities list shows, and
+  the UI is frozen. (3) **The app still never asks for a position again after
+  that**, even if the reader later grants permission in Android settings;
+  re-prompting is a behaviour decision, not a bug fix. (4) **A second
+  `onGeolocationPermissionsShowPrompt` while the first is pending still
+  overwrites the stored callback** (recorded in 1.9.1); the watchdog still
+  bounds the request it abandons, and answering the abandoned callback is a
+  Java change this pass did not need. (5) **A pinned row's coordinates are
+  still never refreshed** by the ten-minute auto-refresh, which re-fetches the
+  forecast, not the position.
+
 ### Fixed — build & release hygiene (2026-11-12, 08:00 IST pass)
 - **The install instructions told every downloader to expect an older build's
   checksum.** The verification block in `README.md` printed `f8a52080…` — the
