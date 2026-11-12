@@ -2620,6 +2620,58 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — build & release hygiene (2026-11-12, 08:00 IST pass)
+- **The install instructions told every downloader to expect an older build's
+  checksum.** The verification block in `README.md` printed `f8a52080…` — the
+  1.7 APK — while `CHECKSUMS.txt`, the committed `LiquidWeather.apk` and every
+  release since 1.8 carried `042f58b6…` (the 1.9.1 build). A reader who ran the
+  two commands exactly as printed got `LiquidWeather.apk: FAILED` on a download
+  that was precisely the file this repository publishes, and a checksum that
+  fails on a good file reads as a corrupted or tampered download — worse than
+  printing none. The block now prints the digest of the committed APK, the same
+  value as `CHECKSUMS.txt`, and nothing else in the README prints a digest.
+- **The version and size the same docs advertise had drifted too.** `README.md`
+  said `Latest APK: v1.7` (the latest release is v1.9) and "93 KB";
+  `STORE.md` said everything in it "matches the current release, `v1.2`" and
+  quoted 65 KB in three places, including the short description a store would
+  publish. The committed APK is 99,176 bytes (97 KB). Both files now name v1.9
+  and 97 KB.
+- **Why it cannot drift again:** a new `.github/scripts/verify_docs.py` reads
+  the digest out of the README's `sha256sum LiquidWeather.apk` block and
+  requires it to equal both `CHECKSUMS.txt`'s digest and the SHA-256 of the
+  committed APK; a README with no digest, with two different digests, or with a
+  stray digest left in the prose fails the build. `.github/workflows/build.yml`
+  runs it next to the existing `CHECKSUMS.txt` and `verify_apk.py` steps, before
+  anything is built. This is the third copy of one value — `CHECKSUMS.txt` and
+  the APK were already checked, the README never was — which is the same defect
+  family as the duplicate-version and stale-asset checks added on 10 November.
+
+### Notes
+- No page change: `web/index.html` is byte-identical to 1.9.1 (SHA-256
+  `d3902694…`), so there is no APK rebuild, no `versionCode` bump and no
+  `CHECKSUMS.txt` change on this pass; the day's release is still cut from the
+  22:00 IST pass.
+- Verified: `node --check` on the page's script; a headless Chromium load of
+  `web/index.html` with mocked forecast, geocoder, Commons and image responses
+  reporting **zero console errors and zero page errors**, with the hero
+  rendering the mocked 29°; `python3 .github/scripts/verify_docs.py .` on this
+  tree (exit 0); the same script against the pre-fix README (exit 1, naming
+  `f8a52080…` against the published `042f58b6…`) and against a deliberately
+  stale `CHECKSUMS.txt` (exit 1); and the reader's own command,
+  `sha256sum -c` with 1.7's digest, reporting `FAILED` — the symptom this pass
+  removes.
+- Left alone deliberately: (1) **the "97 KB" figure stays a hand-written
+  number.** It is prose, and a machine check would fail CI on every rebuild that
+  moves the size by a kilobyte — for a value nobody verifies, unlike the
+  digest. (2) **The `Latest APK: vX.Y` label stays manual.** It names the newest
+  *release*, which legitimately differs from the manifest's unreleased
+  `versionName` (1.9.1 against 1.9), and the workflow cannot see tags at
+  `fetch-depth: 1`, so any check would either be wrong or need a fetch this pass
+  is not entitled to add. (3) **`CHANGELOG.md`'s own ordering.** `[Unreleased]`
+  sits between 1.8.8 and 1.9 rather than at the top, so the newest entry is not
+  where a reader looks first; reordering 3,300 lines of release history is not
+  something one hygiene pass should risk, and it is written down here instead.
+
 ### Clean — time & timezone correctness (2026-11-11, 22:00 IST pass)
 - **Nothing shippable found; no code changed.** The whole time path was read end
   to end and exercised: `hourIndex()` (the "Now" cell, including the midnight

@@ -5,7 +5,7 @@ A glassy, animated weather app — the exact same design as the original `Liquid
 **No ads. No account. No sign-up. No tracking.** Just open it, allow location (or pick a city), and read the weather.
 
 **Try it right now in your browser:** https://technicalnihilist-lgtm.github.io/liquid-weather/  
-**Latest APK:** [v1.7](https://github.com/technicalnihilist-lgtm/liquid-weather/releases/latest)
+**Latest APK:** [v1.9](https://github.com/technicalnihilist-lgtm/liquid-weather/releases/latest)
 
 <p align="center">
   <img src="screenshots/home.png" width="250" alt="Clear night in New Delhi">
@@ -20,7 +20,7 @@ A glassy, animated weather app — the exact same design as the original `Liquid
 
 ## 📲 Install the APK
 
-1. Download **[`LiquidWeather.apk`](LiquidWeather.apk)** (93 KB) from this repo — or from [Releases](../../releases/latest).
+1. Download **[`LiquidWeather.apk`](LiquidWeather.apk)** (97 KB) from this repo — or from [Releases](../../releases/latest).
 2. Tap the file on your phone. Android will say the developer is unknown (the app is self-signed, not from the Play Store) — choose **Install anyway**.
 3. Open **Liquid Weather** and allow location when asked.
 
@@ -30,7 +30,7 @@ Verify your download if you like — the SHA-256 is in [`CHECKSUMS.txt`](CHECKSU
 
 ```bash
 sha256sum LiquidWeather.apk
-# f8a52080f036b27e78b7d45224e0dcf0e986b8b9e4d15a0867078b878d00214c
+# 042f58b64f98086b83307a1e49d0515787003f7aa5444151494ae56e44d9f2f5
 ```
 
 ---
