@@ -2,7 +2,7 @@
 
 Copy-paste values for app stores that read a project from GitHub (Orion, F-Droid
 submissions, Play Store console, etc.). Everything here matches the current
-release, `v1.9`.
+release, `v1.10`.
 
 ## Fields
 
@@ -18,12 +18,12 @@ release, `v1.9`.
 | **Latest release** | `https://github.com/technicalnihilist-lgtm/liquid-weather/releases/latest` |
 | **License** | MIT |
 | **Min Android** | 6.0 (API 23), target SDK 34 |
-| **APK size** | 97 KB |
+| **APK size** | 101 KB |
 | **Price** | Free, no ads, no in-app purchases, no account |
 
 ## Short description (under 160 characters)
 
-> Live weather for any city on Earth, in a glassy animated interface. No ads, no account, no tracking. 97 KB.
+> Live weather for any city on Earth, in a glassy animated interface. No ads, no account, no tracking. 101 KB.
 
 ## Full description
 
@@ -66,7 +66,7 @@ release, `v1.9`.
 >
 > **Small on purpose**
 >
-> The APK is 97 KB, has no dependencies, no ad SDKs and no background services.
+> The APK is 101 KB, has no dependencies, no ad SDKs and no background services.
 > The same file runs in any browser from `web/index.html`.
 
 ## Screenshot URLs (direct links, 4 available — stores usually ask for 3)

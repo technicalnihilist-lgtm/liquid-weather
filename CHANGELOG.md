@@ -2620,6 +2620,71 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Clean — weather-code coverage (2026-11-12, 22:00 IST pass)
+- **Nothing shippable found in the area; the page is unchanged.** The whole
+  code path was read end to end and then exercised rather than eyeballed: the
+  `WMO` table, `codeInfo()`, `iconFor()`, `scene()` and the six `SCENES`
+  entries, `summarise()`, `applyPhoto()`'s choice of scene photo, and both
+  sources of the day/night answer — `isDayNow()`'s sunrise/sunset comparison
+  and the payload's own `is_day`.
+- **What was checked, and came back consistent.** All 28 documented codes plus
+  seven the table does not know (4, 30, 60, 70, 90, 100, 200), day and night —
+  70 states, each rendered through the app's own `render()` — with the hero
+  label, the `bg-*` element left on, the sun and moon opacities, all eight
+  hourly glyphs, all seven daily glyphs, the particle mode and count, `--cc`
+  and the cloud-host opacity recorded. The table is complete (28 of 28), every
+  code reaches a scene, every scene carries its day and night fields, and an
+  unknown code renders "Cloudy" / `bg-*-cloud` / ☁️ / "Mixed conditions." in
+  both halves of the day, which is the fallback 1.3.2 and 1.4.1 put in place.
+- **No scene leaves state behind.** Sixty sequential renders (every code, day
+  then night, in order) were compared with sixty rendered from a neutral state:
+  identical in all eleven observed fields, and the particle canvas holds no
+  paint after a scene that seeds no particles (`getImageData` over the backing
+  store), so switching from rain or snow to a clear or cloudy sky clears the
+  field instead of freezing one frame of it.
+- **Real payloads render consistently.** Four live Open-Meteo responses —
+  Reykjavík, Singapore (a city that has crossed midnight), Mumbai and Tromsø
+  (a polar one) — drew strip, daily rows, hero, summary and sunline that agree
+  with their own codes and `is_day`, with zero console and page errors. The five
+  scene-photo URLs all answer 200 `image/jpeg`.
+- **Left alone deliberately, because a fix would visibly change the screen:**
+  (1) **85 and 86 draw 🌨️ at night** where 71–77 draw ❄️ — a sun-behind-cloud
+  glyph over a night sky; recorded as frozen in 1.4.1 and still frozen, since
+  the only fix is a different icon. (2) **The 7-day rows always use the daytime
+  glyph**, because Open-Meteo's daily block carries no `is_day`; choosing one
+  would be a new rule, not a fix. (3) **The "Now" cell takes its day/night from
+  the payload's hourly `is_day`, not from `isDayNow()`**, so within an hour of
+  sunrise or sunset it can show the other half's glyph while the sky behind it
+  has already switched; the mismatch is visible, so it is written down here.
+  (4) **The snow sentence still calls code 73 ("Snow") "Light snow"** and 81
+  ("Showers") "heavy at times" — wording, and wording is frozen.
+- Verified: `node --check` on the page's script; a headless Chromium load of
+  `web/index.html` with mocked forecast, geocoder and Commons responses
+  reporting **zero console errors and zero page errors** (hero "Clear sky", the
+  night sky `bg-n-sun`, eight hourly cells, seven daily rows, the °C/°F toggle
+  and the search sheet driven in the same run).
+
+### Fixed — geolocation edge cases (2026-11-12, 20:00 IST pass)
+- **Two location prompts open at once left the first one unanswered for good.**
+  `onGeolocationPermissionsShowPrompt()` kept a single callback pair in
+  `geoCallback`/`geoOrigin`, and the page can have two `getCurrentPosition()`
+  calls out at the same time: the silent `locate()` at boot, and a tap on "Use
+  my current location" while that system dialog is still up (the search sheet
+  is reachable from the "Locating…" skeleton, so that is exactly where a reader
+  lands when a cold fix is slow). The later prompt overwrote the earlier
+  callback, that callback was never invoked, and the WebView therefore never
+  answered the page's first request: `locate()` sat on its watchdog and gave up
+  — toasting "Could not reach your location" and rewriting the pinned row as a
+  saved "New Delhi" with `myLoc:false`, after which location is never asked for
+  again. The waiting callbacks are now kept in arrival order and answered
+  together by `answerGeo()` on the permission result and on teardown, and a
+  second prompt joins the system request already out instead of calling
+  `requestPermissions()` again — a request issued while another is being
+  answered is dropped by the platform, so its result would never arrive.
+- This pass changed Java only, so `versionCode`, the committed APK and
+  `CHECKSUMS.txt` were left alone and still agreed with each other; the fix
+  reaches the published APK with the 22:00 rebuild below, which also carries
+  this entry into the changelog.
 ### Fixed — search & geocoding (2026-11-12, 16:00 IST pass)
 - **A country query listed the same place twice, once under each of its two
   names.** The bundled rows a country query adds ("Japan" → Tokyo, Osaka,
@@ -3469,6 +3534,67 @@ pass" is for: the published app is now the app in the repository.
   reporting zero console errors and zero page errors in three time-of-day
   states; `bash -n android/build.sh`; and the APK checks above.
 
+## [1.10] — 2026-11-12
+
+The day's release, cut from the 22:00 IST pass. It publishes everything the
+programme fixed on 12 November — the 08:00, 10:00, 16:00 and 20:00 passes — as
+one version, and rebuilds the APK so the published app is the app in the
+repository (the 20:00 pass changed Java only, so the fix it shipped had not
+reached the APK until now).
+
+### Fixed (carried in this release)
+- **Two location prompts open at once left the first one unanswered for good**
+  (20:00 pass, `MainActivity`): the activity kept a single geolocation callback,
+  so the later of two `getCurrentPosition()` calls overwrote the earlier one,
+  which was never invoked — the page then gave up on its watchdog and turned
+  the pinned row into a saved "New Delhi" while a fix was available. Every
+  waiting prompt is now answered, oldest first, and a second prompt joins the
+  permission request already out.
+- **A fix that arrived inside the time the app had asked for was thrown away
+  whenever the reader took a few seconds to answer the location prompt** (10:00
+  pass): the watchdog counted from the call while the browser's own `timeout`
+  only starts once a decision exists, so a prompt answered at 10s and a first
+  fix at 18s arrived after the watchdog had given up — and giving up disables
+  "My Location" for good. The watchdog now allows the pending prompt plus the
+  browser's deadline.
+- **A country query listed the same place twice, once under each of its two
+  names** (16:00 pass): the bundled rows a country query adds were merged with
+  the geocoder's answer by name alone, so "india" listed the bundled **Delhi**
+  and Open-Meteo's **New Delhi** — the same point — as two rows with two delete
+  controls for one saved place. They are now merged with the same
+  `samePlace()`/`sameLabel()` rule every other pair of rows uses.
+- **The install instructions told every downloader to expect an older build's
+  checksum** (08:00 pass): `README.md` printed the 1.7 digest while
+  `CHECKSUMS.txt`, the committed APK and every release since 1.8 carried
+  another, so a reader who followed the instructions got "FAILED" on a good
+  download. The README now prints the published digest, the version and size the
+  docs advertise were brought up to date, and `.github/workflows/build.yml`
+  checks the README's digest beside the two existing guards so it cannot drift
+  again.
+- The 22:00 pass itself found nothing shippable in its area (weather-code
+  coverage), so the page in this release is the same page as 1.9.3; only the
+  version metadata and the Java shell changed. See the entry above for what was
+  audited and what was deliberately left alone.
+
+### Notes
+- `versionCode 64` / `versionName 1.10` in `android/AndroidManifest.xml` (up
+  from 63 / 1.9.3), same signing key, so it installs over every 1.9 build.
+- The APK was rebuilt from this tree with `android/build.sh` (JDK 17,
+  build-tools 34.0.0, platform 34). It bundles `assets/index.html`
+  byte-identical to `web/index.html` (SHA-256 `43d5df71…`), carries
+  `versionCode 64` / `versionName 1.10`, and `.github/scripts/verify_apk.py`
+  agrees on all three. `classes.dex` contains `answerGeo`, so the 20:00 Java
+  fix is in the published app. `CHECKSUMS.txt` carries the new digest,
+  `6b5a8e28928f340b4335e109eedcd5d7e796ef611ea3536839e1dce5568d8ba3` (101 KB),
+  as does the `sha256sum` block in `README.md` (checked by `verify_docs.py`),
+  and `apksigner verify --print-certs` still reports the project key
+  (`2035d69f…`, `CN=Liquid Weather`).
+- Verified: `node --check` on the page's script; a headless Chromium load of
+  `web/index.html` with mocked forecast, geocoder and Commons responses
+  reporting **zero console errors and zero page errors**; `python3
+  .github/scripts/verify_apk.py .`, `python3 .github/scripts/verify_docs.py .`
+  and `sha256sum -c` on the committed APK, all green; `apksigner verify
+  --print-certs` on the committed APK.
 ## [1.0] — 2026-10-26
 
 First public release.
@@ -3499,7 +3625,8 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.9.1...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.10...HEAD
+[1.10]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.10
 [1.9.1]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.9.1
 [1.9]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.9
 [1.5.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.5.2
