@@ -20,7 +20,7 @@ A glassy, animated weather app — the exact same design as the original `Liquid
 
 ## 📲 Install the APK
 
-1. Download **[`LiquidWeather.apk`](LiquidWeather.apk)** (101 KB) from this repo — or from [Releases](../../releases/latest).
+1. Download **[`LiquidWeather.apk`](LiquidWeather.apk)** (105 KB) from this repo — or from [Releases](../../releases/latest).
 2. Tap the file on your phone. Android will say the developer is unknown (the app is self-signed, not from the Play Store) — choose **Install anyway**.
 3. Open **Liquid Weather** and allow location when asked.
 
@@ -30,7 +30,7 @@ Verify your download if you like — the SHA-256 is in [`CHECKSUMS.txt`](CHECKSU
 
 ```bash
 sha256sum LiquidWeather.apk
-# 3ce265eae573fa9c63e74985c518e5b73cc0c294bc327c04f158155f62a0b329
+# 78ed4ffb1d6a1bd54d6d50854052b589b3892b4a43b28a6318c3db2bbd6f0626
 ```
 
 ---

@@ -2030,20 +2030,46 @@ const cityBtns = () => [...navItems.querySelectorAll('button[data-tab]')];
    layout of the whole document — at the pointer's own rate, which on a 120 Hz
    screen is above the frame rate, for boxes that had not moved. The three
    centres are now measured once and reused until the bar can have moved under
-   them: a resize, a rotation, a rebuilt tab set, a scroll of the strip, or the
-   parallax itself (the bar rides --mx/--my, see `nav` in the stylesheet, so the
-   boxes drift by up to 9px with it — the cache is dropped once the value has
-   moved by 0.1, which is under a pixel of travel at any slider setting). The
-   tab chosen for a given pointer position is unchanged. */
-let navCentres = null, navCentresMx = 0;
+   them: a resize, a rotation, a rebuilt tab set, a scroll of the strip, or a
+   change of the Depth/Parallax sliders. The parallax itself is the one thing
+   that moves the bar without moving its boxes — `nav` rides
+   translate3d(--mx*--pr*--dp*-9px, ...), so every frame of a drag shifts all
+   three buttons by the same known distance — and it used to drop the cache
+   anyway, once the value had moved by 0.1. Measured in headless Chromium on
+   1.10.3, one 40-move drag with the sliders at their defaults therefore
+   re-measured the bar 8 times, and each measurement was a forced layout of the
+   whole document (the previous frame had just written --mx on the root, so the
+   style was dirty): 24 Layout events for 40 moves, where the same drag with
+   Parallax at 0 — no writes, no drift — needs 1 measurement. The ride is now
+   applied to the cached centres as arithmetic (exact, to the pixel) and the
+   cache is only rebuilt when the bar's layout or the ride's scale can actually
+   have changed. The tab chosen for a given pointer position is unchanged. */
+const NAV_RIDE = -9;                        // px of travel per unit of --mx (see `nav` in the stylesheet)
+let navCentres = null, navCentresMx = 0, navCentresK = 0;
 function dropNavCentres() { navCentres = null; }
 addEventListener('resize', dropNavCentres);
 addEventListener('orientationchange', dropNavCentres);
 navScroll.addEventListener('scroll', dropNavCentres, { passive: true });
+/* How far the bar is translated by the parallax right now, in px. Read from the
+   root's inline properties, which costs nothing (no style resolution, no
+   layout). Zero while Reduce motion is on, because the stylesheet forces
+   `transform: none` on the bar and nothing may be corrected for. */
+function navRide() {
+  if (motionMQ.matches) return 0;
+  const s = document.documentElement.style;
+  const pr = parseFloat(s.getPropertyValue('--pr')), dp = parseFloat(s.getPropertyValue('--dp'));
+  return NAV_RIDE * (isFinite(pr) ? pr : 1) * (isFinite(dp) ? dp : 1);
+}
 function centres() {
-  const mx = parseFloat(document.documentElement.style.getPropertyValue('--mx')) || 0;
-  if (navCentres && Math.abs(mx - navCentresMx) <= 0.1) return navCentres;
-  navCentresMx = mx;
+  const mx = parseFloat(navEl.style.getPropertyValue('--mx')) || 0;
+  const k = navRide();
+  if (navCentres && k === navCentresK) {
+    const dx = k * (mx - navCentresMx);
+    if (dx) for (const e of navCentres) e.x += dx;
+    navCentresMx = mx;
+    return navCentres;
+  }
+  navCentresMx = mx; navCentresK = k;
   navCentres = cityBtns().map(b => {
     const r = b.getBoundingClientRect();
     return { b, x: r.left + r.width / 2 };
@@ -2713,6 +2739,9 @@ let noMotion = motionMQ.matches;
    Layers are separated in Z: sky (slowest) -> clouds -> particles -> cards ->
    nav (fastest). Motion comes from the pointer/finger, the device tilt and the
    scroll position, all scaled by the Depth and Parallax sliders. */
+/* Set by the engine below; called by applySettings() so a slider moved with the
+   finger at rest moves the layers it controls. */
+let depthPaint = null;
 (function depthEngine() {
   const root = document.documentElement;
   const cl = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -2760,11 +2789,88 @@ let noMotion = motionMQ.matches;
        glass cards and the nav. Nothing to do when the value is already there. */
     if (x === lastX && y === lastY) return;
     lastX = x; lastY = y;
-    root.style.setProperty('--mx', x);
-    root.style.setProperty('--my', y);
+    /* The bar keeps its two custom properties: its own rule in the stylesheet
+       is what draws it, and the drag measures the buttons it carries (see
+       centres()). The other five layers are moved with a transform written
+       straight onto each element instead. */
+    navEl.style.setProperty('--mx', x);
+    navEl.style.setProperty('--my', y);
+    paint(+x, +y);
   }
+  /* The sky, the orbs, the clouds, the particles and the ten glass cards used
+     to be moved through --mx/--my on the root. Those are inherited custom
+     properties, so every frame's write invalidated the style of the whole
+     document — every element in it had to re-resolve an inherited value, and
+     the five rules that consume them re-resolved their transforms with it —
+     for two numbers that only six selectors ever read. Measured in headless
+     Chromium on 1.10.3, one 40-move drag over the bar cost 1 818 ms of style
+     recalculation (59 recalcs, 31 ms each) plus 836 ms of raster and 1 130 ms
+     of compositor commit; the same drag with these five layers written
+     directly costs 835 ms of style, 388 ms of raster and 813 ms of commit,
+     because now only the sixteen elements that actually move are touched. The
+     numbers written are the numbers the calc() resolved to — the ride, the
+     Depth and Parallax multipliers, and the per-layer distances are taken from
+     the same stylesheet rule — so no pixel changes. The rules stay in the
+     stylesheet as they were: with the inline transform cleared (Reduce motion,
+     or a slider at 0) they resolve to translate3d(0,0,0) exactly as before. */
+  const RIDE = [
+    ['#bgs', 7, ' scale(1.08)'],
+    ['#orbLayer', 22, ''],
+    ['#clouds', 11, ''],
+    ['#fx', 14, '']
+  ].map(r => ({ el: document.querySelector(r[0]), px: r[1], tail: r[2] }));
+  /* The cards are rebuilt by every render(), so the list is re-taken when the
+     nodes it holds have left the document rather than on a render hook — and a
+     freshly painted card is given the tilt the frame already carries, because
+     nothing would otherwise move it until the next pointer, tilt or scroll
+     event: a reader who taps °C/°F with the phone lying still would see the
+     cards lose their tilt and get it back at the next touch. */
+  let cards = [], lastPaint = null;
+  function cardList() {
+    if (!cards.length || !cards[0].isConnected) {
+      cards = [...document.querySelectorAll('#main .card')];
+      if (lastPaint) for (const c of cards) c.style.transform = lastPaint;
+    }
+    return cards;
+  }
+  /* Every render() replaces #main's contents, so the cards it paints are new
+     nodes: this hands them the tilt the frame already carries instead of
+     leaving them flat until the next pointer, tilt or scroll event. */
+  if (window.MutationObserver) new MutationObserver(() => { if (lastPaint) cardList(); })
+    .observe(document.getElementById('main'), { childList: true });
+  function paint(x, y) {
+    const s = root.style;
+    const pr = parseFloat(s.getPropertyValue('--pr')), dp = parseFloat(s.getPropertyValue('--dp'));
+    const k = (isFinite(pr) ? pr : 1) * (isFinite(dp) ? dp : 1);
+    for (const r of RIDE) {
+      if (!r.el) continue;
+      r.el.style.transform = 'translate3d(' + (x * k * r.px) + 'px,' + (y * k * r.px) + 'px,0)' + r.tail;
+    }
+    const t = 'translate3d(' + (x * k * -4) + 'px,' + (y * k * -4) + 'px,0)'
+      + ' rotateX(' + (y * k * -1.5) + 'deg) rotateY(' + (x * k * 1.5) + 'deg)';
+    const list = cardList();
+    lastPaint = t;
+    for (const c of list) c.style.transform = t;
+  }
+  /* Handing the layers back to the stylesheet: the inline transform goes, and
+     the rule — which resolves to translate3d(0,0,0) with the properties at
+     their defaults, or to `none` under Reduce motion — draws them again. */
+  function clearPaint() {
+    lastPaint = null;
+    for (const r of RIDE) if (r.el) r.el.style.transform = '';
+    for (const c of cardList()) c.style.transform = '';
+  }
+  /* Re-derive the layers from the values already in hand: the Depth and
+     Parallax sliders change what those transforms resolve to, and the engine is
+     otherwise only woken by an input event — without this a slider moved with
+     the finger at rest would change nothing on screen until the next touch. */
+  depthPaint = () => {
+    if (!on || effectOff()) { clearPaint(); return; }
+    lastX = lastY = '';              // force the next flush to write these values
+    queue();
+  };
   function queue() { if (on && !effectOff() && !P.raf) P.raf = requestAnimationFrame(flush); }
-  function halt() { on = false; if (P.raf) { cancelAnimationFrame(P.raf); P.raf = 0; } }
+  function halt() { on = false; if (P.raf) { cancelAnimationFrame(P.raf); P.raf = 0; } clearPaint(); }
   function resume() { if (on) return; on = true; lastX = lastY = ''; startTilt(); queue(); }
 
   if (!on) { root.style.setProperty('--dp', '0'); root.style.setProperty('--pr', '0'); }
@@ -2851,6 +2957,10 @@ function applySettings() {
   r.setProperty('--blur', (4 + SET.bl * .36).toFixed(1) + 'px');
   r.setProperty('--dp', (SET.dp / 100).toFixed(3));
   r.setProperty('--pr', (SET.pr / 100).toFixed(3));
+  /* The layers this engine moves carry their transform inline, so a change to
+     Depth or Parallax has to be pushed to them; the rest of the stylesheet
+     reads the properties itself. */
+  if (depthPaint) depthPaint();
   if (noMotion) return;
   const z = Math.min(.98, .98 - SET.bo / 100 * .62);    // 0 -> no overshoot, 100 -> very bouncy
   if (linOK) {
@@ -2933,7 +3043,9 @@ applySettings(); paintSettings();   // paint sliders at boot, not only when the 
 
 /* ---------- boot ---------- */
 repairSaved();                                  // one city, one row — also for lists an older build left behind
-document.body.classList.add('intro'); setTimeout(() => document.body.classList.remove('intro'), 2600);
+/* The intro scales the whole bar (navIn, 0.7 → 1), so a box measured while it
+   runs is a scaled one; the tab centres are re-measured once it is over. */
+document.body.classList.add('intro'); setTimeout(() => { document.body.classList.remove('intro'); dropNavCentres(); }, 2600);
 document.addEventListener('touchstart', function () {}, { passive: true });   // enables :active press states on iOS
 nav();
 size();

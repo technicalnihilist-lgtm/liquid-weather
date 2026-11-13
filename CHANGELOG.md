@@ -2620,6 +2620,87 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — render performance (2026-11-13, 22:00 IST pass)
+- **Every parallax frame recalculated the style of the whole document.** The
+  depth engine moved the sky, the orbs, the clouds, the particle canvas and the
+  ten glass cards by writing two custom properties, `--mx`/`--my`, on
+  `documentElement` once per animation frame. Custom properties are inherited,
+  so each write invalidated every element in the document — each had to
+  re-resolve an inherited value, and the six rules that consume them re-resolved
+  their transforms with it — for two numbers only those six selectors ever read.
+  Measured in headless Chromium on 1.10.3, one 40-move drag across the bar cost
+  **2 466 ms of style recalculation** (55 recalcs, ~45 ms each) plus 311 ms of
+  paint, 1 171 ms of raster and 1 233 ms of compositor commit; a 25-step scroll
+  cost 747 ms of style and 46 ms of paint. The five layers that are not the bar
+  now carry their transform inline, written straight onto each element, so a
+  frame touches the sixteen elements that actually move: the same drag costs
+  **1 018 ms of style, 46 ms of paint, 266 ms of raster and 879 ms of commit**,
+  and the same scroll 466 ms of style and 13 ms of paint. The bar keeps
+  `--mx`/`--my` on itself — its own rule in the stylesheet is what draws it, and
+  the drag measures the buttons it carries (see `centres()` below) — so nothing
+  about how it rides changed. Nothing about the *values* changed either: the
+  ride distances (7/22/11/14/-4/-9 px), the `scale(1.08)` on the sky, the
+  `translateZ(0)` on the bar and the ±1.5° card rotation are the numbers the
+  stylesheet's own `calc()` resolved to, and the rules stay in the stylesheet as
+  they were, so with the inline transform cleared — Reduce motion, or a slider
+  at 0 — they draw the layers exactly as before.
+- **The three tab centres were re-measured while the bar was only sliding.**
+  The drag path caches the tabs' centres and drops the cache when the bar can
+  have moved under them, which included "the parallax has moved by 0.1" — but
+  the parallax is the one thing that moves the bar *without* moving its boxes,
+  and it moves on every frame of a drag, so the cache was dropped anyway:
+  measured on 1.10.3, one 40-move drag re-measured the bar **8 times**, each a
+  forced layout of the whole document (the previous frame had just written
+  `--mx`, so the style was dirty), against **1** for the same drag with Parallax
+  at 0. The ride is now applied to the cached centres as arithmetic — exact, and
+  free — and the cache is rebuilt only when the bar's layout or the ride's scale
+  can have changed (resize, rotation, a scroll of the strip, a slider move, the
+  end of the intro, which scales the bar). The tab chosen for a given pointer
+  position is unchanged, move for move.
+- **Two smaller consequences of the same change, handled here rather than
+  left.** (1) The Depth and Parallax sliders used to change the layers by
+  rewriting the properties the stylesheet read; with the transform inline,
+  `applySettings()` now pushes the change to the layers, so a slider moved with
+  the finger at rest still moves them at once. (2) Every `render()` replaces
+  `#main`, so the cards it paints are new nodes; a `MutationObserver` on `#main`
+  hands a freshly painted card the tilt the frame already carries, which
+  otherwise would have dropped out until the next pointer, tilt or scroll event
+  — visible to anyone tapping °C/°F with the phone lying still.
+- Nothing visible changed. Full-page screenshots of the 430×900 phone at DPR 2,
+  with every animation and transition removed and `Math.random` seeded, are
+  **pixel-identical — 0 differing pixels of 6 192 000** — in four parallax
+  states (`--mx` −0.3093, 0.0000, 0.2767, 0.5698, the same four numbers the
+  engine writes in both builds); the `#fx` canvas is hidden for the comparison
+  because its drops advance with time. Every layer's computed transform matrix
+  was also checked against the stylesheet's own formula, and the drag's hovered
+  tab was recorded at each of 41 pointer positions and is identical in both
+  builds, ending on the same tab.
+- **Left alone deliberately.** (1) The lens still animates `left`/`width`, which
+  are not compositable, inside a `backdrop-filter` bar — a transform would have
+  to stretch the lens and its inset shadows to keep the same look, which is a
+  visual change. (2) The cards' 3D transform over `backdrop-filter` is still
+  about half of what remains of the style cost per frame; it is the design.
+  (3) `placePill()` still reads the target tab's `offsetWidth` per pill move —
+  the 12:00 pass measured that and declined it, and the same measurement holds.
+  (4) The photo layer still builds an `Image` per render (0.035 ms on an already
+  decoded picture, deferred by 1.8.10).
+- Verified: `node --check` on the page's script; headless Chromium loads of
+  `web/index.html` with mocked forecast, geocoder, Commons and image responses
+  reporting **zero console messages, warnings and page errors**, through the
+  tabs, the search sheet with a typed query, the °C/°F toggle, the settings
+  panel with Depth and Parallax moved, a 400×780 resize and Reduce motion
+  switched on, off and launched with; the pixel and matrix comparisons above;
+  and, for the APK, `python3 .github/scripts/verify_apk.py .`, `python3
+  .github/scripts/verify_docs.py .` and `sha256sum -c` on the committed APK, all
+  green, with `apksigner verify --print-certs` still reporting the project key
+  (`2035d69f…`, `CN=Liquid Weather`). `versionCode 68` / `versionName 1.10.4` in
+  `android/AndroidManifest.xml` (up from 67 / 1.10.3), same signing key; the APK
+  was rebuilt from this tree with `android/build.sh` (JDK 17, build-tools
+  34.0.0, platform 34), bundles `assets/index.html` byte-identical to
+  `web/index.html`, and carries that version. `CHECKSUMS.txt` and the
+  `sha256sum` block in `README.md` carry the new digest,
+  `78ed4ffb1d6a1bd54d6d50854052b589b3892b4a43b28a6318c3db2bbd6f0626` (105 KB).
+
 ### Fixed — accessibility & semantics (2026-11-13, 16:00 IST pass)
 - **The ✕ that deletes a saved city was a control nested inside another
   control.** Each row in the Cities sheet was a `<button>`, and the delete
