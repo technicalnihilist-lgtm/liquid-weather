@@ -3902,6 +3902,73 @@ reached the APK until now).
   .github/scripts/verify_apk.py .`, `python3 .github/scripts/verify_docs.py .`
   and `sha256sum -c` on the committed APK, all green; `apksigner verify
   --print-certs` on the committed APK.
+## [1.11] — 2026-11-13
+
+The day's release, cut from the 22:00 IST pass. It publishes everything the
+programme fixed on 13 November — the 08:00, 12:00, 16:00 and 22:00 passes — as
+one version, and rebuilds the APK so the published app is the app in the
+repository.
+
+### Fixed (carried in this release)
+- **Every parallax frame recalculated the style of the whole document** (22:00
+  pass, render performance): the depth engine wrote `--mx`/`--my` on
+  `documentElement` once per frame, and because those are inherited custom
+  properties each write invalidated every element in the document for two
+  numbers only six selectors read. The five layers that are not the bar now
+  carry their transform inline. One 40-move drag in headless Chromium goes from
+  2 466 ms of style recalculation, 311 ms of paint, 1 171 ms of raster and
+  1 233 ms of commit to 1 018 / 46 / 266 / 879 ms, and a 25-step scroll from
+  747 ms of style and 46 ms of paint to 466 ms and 13 ms. The tab centres the
+  drag caches were also re-measured on every 0.1 of parallax drift (8 forced
+  document layouts per drag, against 1 with Parallax at 0); the ride is now
+  applied to them as arithmetic. Pixel-identical: 0 differing pixels of
+  6 192 000 across four parallax states.
+- **A blank particle canvas kept 6.19 MB of pixels for the whole session**
+  (12:00 pass): a clear, cloudy or foggy sky seeds no particles, yet the
+  `#fx` backing store (860×1800 at DPR 2) stayed allocated, with its compositor
+  texture, from launch to launch. The store is given back when a scene seeds
+  nothing and taken again when one does. With Reduce motion on, the pixels go
+  back too, instead of being held for a picture that cannot be drawn.
+- **Nine blurred cloud layers and the sun kept animating while invisible**
+  (12:00 pass): up to eight of the nine clouds sit at `opacity: 0` on a clear
+  sky, and the sun is invisible in every rain, snow, fog and storm scene and all
+  night. A hidden one is now paused after its 1.2 s fade, a shown one resumed at
+  once.
+- **A busy city-photo lookup was cached as "this city has no photo" for three
+  weeks** (08:00 pass): MediaWiki reports a rate limit or internal error with
+  HTTP 200 and an `error` object in the body, which the reader took for an empty
+  result and stored as `{none:1}` for the whole 21-day `PHOTO_TTL`. It is now
+  thrown, so the lookup is retried in five minutes and nothing is cached.
+- **The ✕ that deletes a saved city was a control nested inside another
+  control** (16:00 pass): each Cities row was a `<button>` with a
+  `<span role="button">` inside it, which HTML forbids and assistive technology
+  may flatten — the only way to remove a city could vanish from the
+  accessibility tree. The row is a plain container with two sibling buttons now,
+  and the row icons are `aria-hidden` so the spoken name matches the visible
+  one. The hourly strip also carries `tabindex="0"`, so it can be scrolled
+  without a pointer on WebViews that do not make scroll containers focusable.
+- The 22:00 pass left the lens's `left`/`width` animation and the cards'
+  3D-transform cost alone: both are what the frozen UI looks like.
+
+### Notes
+- `versionCode 69` / `versionName 1.11` in `android/AndroidManifest.xml` (up
+  from 68 / 1.10.4), same signing key, so it installs over every 1.10 build.
+- The APK was rebuilt from this tree with `android/build.sh` (JDK 17,
+  build-tools 34.0.0, platform 34). It bundles `assets/index.html`
+  byte-identical to `web/index.html` (SHA-256 `8a8b118c…`), carries
+  `versionCode 69` / `versionName 1.11`, and `.github/scripts/verify_apk.py`
+  agrees on all three. `CHECKSUMS.txt` carries the new digest,
+  `397900bc27f5539aa664db1d60447fcd1cd4307a0d8cc8499b10f3d1bdcb3a01`
+  (105 KB), as does the `sha256sum` block in `README.md` (checked by
+  `verify_docs.py`), and `apksigner verify --print-certs` still reports the
+  project key (`2035d69f…`, `CN=Liquid Weather`).
+- Verified: `node --check` on the page's script; a headless Chromium load of
+  `web/index.html` with mocked forecast, geocoder, Commons and image responses
+  reporting **zero console messages and zero page errors**; the pixel and matrix
+  comparisons recorded in the 22:00 entry; `python3
+  .github/scripts/verify_apk.py .`, `python3 .github/scripts/verify_docs.py .`
+  and `sha256sum -c` on the committed APK, all green.
+
 ## [1.0] — 2026-10-26
 
 First public release.
