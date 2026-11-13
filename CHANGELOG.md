@@ -2620,6 +2620,59 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — network & API robustness (2026-11-13, 08:00 IST pass)
+- **A busy city-photo lookup was remembered as "this city has no photo" for
+  three weeks.** MediaWiki reports an API-level failure with **HTTP 200 and an
+  `error` object in the body** — a rate limit, an internal error, a parameter it
+  no longer accepts — so the status says nothing and only the body knows.
+  `commonsCityPhotoWith()` checked `r.ok` and then read the body as data: the
+  missing `query.pages` became an empty page list, the function returned `null`
+  with `failed` still `false`, and `fetchCityPhoto()` cached `{none:1}` for the
+  city — the record that means "the API answered, and this city has no usable
+  file". That record is honoured for the whole 21-day `PHOTO_TTL`, and no
+  `photoFail` marker was left either, so the API was not asked again: one
+  rate-limited answer kept that city without a backdrop until 3 December. The
+  record also takes one of the twelve slots `readPhotoStore()` keeps, so a few
+  of them start evicting cities that do have photos. An `error` body is now
+  thrown, which is the path an HTTP error already took — a lookup that could
+  not be made: nothing cached, the five-minute `photoFail` backoff applies, and
+  the second (bare-term) query is skipped exactly as it is for a non-2xx
+  answer, because a busy API is not asked twice in the same breath.
+- Measured in headless Chromium, one city with no stored photo and Commons
+  answering `{"error":{"code":"ratelimited","info":"…"}}` to both queries:
+  before the change `localStorage.lw_photos` ended as
+  `{"c19.076,72.878":{"none":1,…}}` with `photoFail` empty; after it,
+  `lw_photos` is untouched and `photoFail` holds that key (retry in five
+  minutes). Nothing regressed on the two answers that must stay cached: a valid
+  Commons page still stores the photo (URL, author, licence, title and the
+  credit line unchanged) and an empty-but-valid `query.pages` still stores
+  `{none:1}`, so "there is no photo for this city" does not turn into a retry
+  loop.
+- **Left alone deliberately.** `getJSON()` still runs one deadline for the whole
+  call, retry included, so a server that answers 503 at 11.5s gets its retry
+  aborted at 12s — that is the behaviour 1.2.4 chose on purpose ("an offline
+  device still fails at the normal deadline instead of waiting three times as
+  long"), and widening it would leave the loading skeleton up for up to 24s.
+  Also left alone: `Retry-After` is read in its numeric form only (the
+  HTTP-date form falls back to the 300ms default), and the body of a retried
+  non-2xx response is neither read nor cancelled, which costs one keep-alive
+  connection for a few hundred milliseconds and nothing a reader can see.
+- Verified: `node --check` on the page's script; a headless Chromium load of
+  `web/index.html` with mocked forecast, geocoder and Commons responses
+  reporting **zero console errors and zero page errors**; a before/after
+  comparison of the rendered `#main` markup, twelve elements' computed styles
+  and the nine settings variables, **byte-identical** for the same payload; and
+  the targeted checks above. `versionCode 65` / `versionName 1.10.1` in
+  `android/AndroidManifest.xml` (up from 64 / 1.10), same signing key. The APK
+  was rebuilt from this tree with `android/build.sh` (JDK 17, build-tools
+  34.0.0, platform 34); it bundles `assets/index.html` byte-identical to
+  `web/index.html` (SHA-256 `71377649…`), carries `versionCode 65` /
+  `versionName 1.10.1`, and `.github/scripts/verify_apk.py` agrees on all
+  three. `apksigner verify --print-certs` still reports the project key
+  (`2035d69f…`, `CN=Liquid Weather`). `CHECKSUMS.txt` carries the new digest,
+  `88745efda02010ca27975b31182ae9a73b2ac60d502a20f68fe8f15d7edcaeb8` (101 KB),
+  as does the `sha256sum` block in `README.md` (`verify_docs.py` green).
+
 ### Clean — weather-code coverage (2026-11-12, 22:00 IST pass)
 - **Nothing shippable found in the area; the page is unchanged.** The whole
   code path was read end to end and then exercised rather than eyeballed: the

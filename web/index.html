@@ -447,6 +447,20 @@ async function commonsCityPhotoWith(term, signal) {
   const r = await fetch(COMMONS_API + '?' + q.toString(), { signal, headers: { Accept: 'application/json' } });
   if (!r.ok) throw new Error('HTTP ' + r.status);      // busy or blocked: not "there is no photo"
   const j = await r.json();
+  /* MediaWiki reports an API-level failure — a rate limit, an internal error, a
+     parameter it no longer accepts — with HTTP 200 and an `error` object in the
+     body, not with an HTTP status. The body was read as data, the missing
+     `query.pages` became an empty list, and the empty list became a lookup that
+     "answered": fetchCityPhoto() cached {none:1} for the city and left no
+     backoff marker, so one such answer kept that city without a backdrop for
+     the whole three-week PHOTO_TTL and the API was never asked again (the
+     record also took one of the twelve slots readPhotoStore keeps, so enough of
+     them start evicting cities that do have photos). It is the same failure the
+     HTTP status above already covers, so it takes the same path: a lookup that
+     could not be made, backed off for five minutes and never cached as "no
+     photo". The second query is skipped for it exactly as it is for an HTTP
+     error — a busy API is not asked a second time in the same breath. */
+  if (j && j.error) throw new Error('API ' + ((j.error && j.error.code) || 'error'));
   const pages = (j && j.query && j.query.pages) ? Object.keys(j.query.pages).map(k => j.query.pages[k]) : [];
   pages.sort((x, y) => (x.index || 0) - (y.index || 0));      // search rank, best first
   for (const pg of pages) {
