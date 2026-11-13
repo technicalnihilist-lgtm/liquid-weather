@@ -2620,6 +2620,95 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — render performance (2026-11-13, 12:00 IST pass)
+- **A blank particle canvas kept 6.2 MB of pixels for the whole session.** The
+  `#fx` backing store is 430×900 at the device pixel ratio, so 860×1800 at DPR 2
+  — 1 548 000 pixels, 6.19 MB — and it was allocated once at launch and never
+  given back. Clear, mainly-clear, cloudy and foggy skies seed **no particles at
+  all** (`seed()` returns an empty field for them), so a reader whose city is
+  clear paid 6.19 MB of WebView memory, and a 6.19 MB compositor texture for a
+  layer that carries `will-change: transform`, for a canvas that is blank from
+  launch to launch and never draws a pixel. Measured in headless Chromium on
+  `1.10.1`: `#fx` is `860×1800` with `P.length === 0` on a clear sky, a cloudy
+  sky and a foggy one. The store is now released (attributes set to 0, which
+  drops the bitmap; the element's CSS size is untouched, so nothing moves) when
+  a scene seeds nothing, and taken again — `fitCanvas()` at the same W/H/DPR,
+  with the same `setTransform` — the moment a scene seeds particles. On the same
+  measurements: clear, cloudy and foggy skies now hold a `0×0` canvas, rain
+  keeps `860×1800` with its 170 drops, rain → clear gives the pixels back, and
+  clear → rain allocates and paints again (0 → 22 sampled non-transparent
+  pixels). A resize on a clear sky no longer reallocates either: ten `size()`
+  calls and a 430×900 → 390×844 viewport change leave the canvas at `0×0`.
+- **Reduce motion paid for a picture it never draws.** With the setting on, the
+  loop cleared the canvas once and stopped, but the 6.19 MB stayed allocated for
+  a field that cannot be drawn until the setting changes. Dropping the store
+  blanks the canvas in one go — exactly what that single clearing frame did — so
+  the pixels are now released instead, and `startFx()` sizes the canvas again
+  when the setting is turned off, which resumes the same drops in the same
+  places (measured: `0×0` with 170 drops held while the setting is on, then
+  `860×1800` and 24 painted samples after switching it off, zero re-seeds).
+- **Nine blurred cloud layers and the sun kept animating while invisible.** The
+  number of drifting clouds follows the forecast's cloud cover, so a clear sky
+  holds eight of the nine at `opacity: 0`; the sun is at `opacity: 0` for every
+  rain, snow, fog and storm scene and for the whole night. Both carry a
+  compositor animation that ran regardless — each cloud is a
+  `will-change: transform` layer over a `blur(16px)` drifting on a 50–110 s
+  loop, the sun a 220px radial gradient pulsing through a 12% scale every 6 s —
+  so the app was animating up to nine invisible layers from launch to launch.
+  A hidden one is now paused (`animation-play-state`, after its 1.2 s opacity
+  fade has finished, so nothing is ever frozen while any part of it is on
+  screen) and a shown one resumed immediately, so a cloud still fades in while
+  drifting. Measured on a clear day: 8 of 9 drift animations paused, 1 running;
+  on a cloudy, rainy or stormy day all nine keep running; the sun's pulse is
+  paused in rain, snow and storm and running in clear and cloudy skies.
+- Nothing visible changed. `#main`'s markup is byte-identical to 1.10.1 across
+  four payloads (clear day, cloudy day, rain, snow), the nine settings variables
+  are identical, and the computed styles of 24 selectors (bar, hero, cards,
+  hourly strip, daily rows, nav, pill, photo layer, active scene, clouds,
+  canvas, orbs, panels) match — the only difference is `#sun`'s transform, which
+  is the phase of its infinite 6 s pulse, frozen behind `opacity: 0` where it is
+  paused and unobservable either way. Full-page screenshots of the 430×900 phone
+  at DPR 2 are **pixel-identical** (0 differing pixels of 1 548 000) for the
+  clear and cloudy skies with `Math.random` seeded and the animation clock
+  pinned, and the particle field is unchanged where it matters: one deterministic
+  frame through the real `tick()` hashes identically before and after — rain
+  `68c71c9` with 211 painted samples, snow `1d7d0001` with 97. Cloud geometry
+  (width, top, duration, negative delay) is identical under a seeded RNG; the
+  only difference in a cloud's style attribute is the paused play-state of the
+  ones at `opacity: 0`.
+- **Left alone deliberately.** (1) The photo layer still builds a fresh `Image`
+  per render — re-measured at 0.035 ms on an already-decoded picture, which is
+  the number 1.8.10 recorded when it deferred this to a render pass; the
+  assignment that follows is a full-screen layer the reader is already looking
+  at, and skipping it would need a cache keyed on URL + scrim + cover for a cost
+  that does not show. (2) `placePill()` still forces one style recalculation per
+  pill move by reading the target tab's `offsetLeft`/`offsetWidth` after the
+  previous move wrote the pill's; moving the strip's `scrollWidth` read ahead of
+  the writes was tried and measured **8 → 7 recalcs per eight moves**, because
+  the read that costs is the tab measurement, not the strip's, so the change was
+  reverted rather than shipped as churn. (3) The canvas keeps its store while
+  the page is hidden: releasing it there would free 6.19 MB in the background
+  but reallocate on return for a field that is already correct. (4) The 60-second
+  refresh interval and the `deviceorientation` subscription that 1.8.10 weighed
+  are unchanged.
+- Verified: `node --check` on the page's script; headless Chromium loads of
+  `web/index.html` with mocked forecast, geocoder and Commons responses
+  reporting **zero console errors, warnings and page errors** across clear,
+  cloudy, rain, snow and storm payloads, and through a smoke run of every panel
+  (tabs, search sheet with a typed query, °C/°F toggle, three scene switches,
+  a resize to 400×780 at DPR 3, six pill moves, the settings panel and a
+  visibility flip) that ends with the storm's 260 particles drawn on a correctly
+  sized `800×1560` canvas. `versionCode 66` / `versionName 1.10.2` in
+  `android/AndroidManifest.xml` (up from 65 / 1.10.1), same signing key. The APK
+  was rebuilt from this tree with `android/build.sh` (JDK 17, build-tools
+  34.0.0, platform 34); it bundles `assets/index.html` byte-identical to
+  `web/index.html` (SHA-256 `c12d598d…`), carries `versionCode 66` /
+  `versionName 1.10.2`, and `.github/scripts/verify_apk.py` agrees on all three.
+  `apksigner verify --print-certs` still reports the project key (`2035d69f…`,
+  `CN=Liquid Weather`). `CHECKSUMS.txt` carries the new digest,
+  `adbc03572aca4c478cbf00da6a2ae30f41d780f924467d3c8621db4a8c6c80e1` (101 KB),
+  as does the `sha256sum` block in `README.md` (`verify_docs.py` green).
+
 ### Fixed — network & API robustness (2026-11-13, 08:00 IST pass)
 - **A busy city-photo lookup was remembered as "this city has no photo" for
   three weeks.** MediaWiki reports an API-level failure with **HTTP 200 and an

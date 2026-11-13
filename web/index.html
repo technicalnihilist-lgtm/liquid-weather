@@ -760,11 +760,54 @@ for (let i = 0; i < 9; i++) {
   d.dataset.i = i;
   cloudHost.appendChild(d);
 }
+/* Nine blurred cloud layers and the sun's glow each carry a compositor
+   animation that ran from launch to launch whether or not the scene showed
+   them: the number of clouds on screen follows the forecast's cloud cover, so a
+   clear sky holds up to eight of the nine at `opacity: 0`, and the sun is at
+   `opacity: 0` for every rain, snow, fog and storm scene and for the whole
+   night. Each of those is a permanently animating layer — the clouds are
+   `will-change: transform` over a `blur(16px)`, the sun is a 220px radial
+   gradient pulsing through a 12% scale — painting nothing. An animation on an
+   element nobody can see cannot be seen to stop, so a hidden one is paused and
+   a shown one resumed, and only after its 1.2s opacity fade has finished: a
+   cloud is never frozen while any part of it is still on screen. Counts,
+   durations, delays, sizes, colours and keyframes are untouched, and so is
+   everything `prefers-reduced-motion` already turns off. */
+const idleAnim = [...cloudHost.children, $('#sun')];
+let idleT = 0;
+function resumeShown() {
+  for (const el of idleAnim)
+    if (el.style.opacity !== '0' && el.style.animationPlayState) el.style.animationPlayState = '';
+}
+function pauseHidden() {
+  for (const el of idleAnim)
+    if (el.style.opacity === '0') el.style.animationPlayState = 'paused';
+}
 
 /* ---------- particle canvas ---------- */
 const cv = $('#fx'), cx = cv.getContext('2d');
 let P = [], mode = '', W = 0, H = 0;
-let DPR = 1, needClear = true;
+let DPR = 1, needClear = true, released = false;
+/* The backing store is the expensive part of a canvas: 430×900 at DPR 2 is
+   860×1800×4 bytes, 6.2 MB of pixels, and it was allocated once and then held
+   for the whole session — including on a clear, cloudy or foggy sky, which seed
+   no particles at all and never draw a single pixel. A phone that spends the
+   day on a clear sky paid 6.2 MB of WebView memory (and a 6.2 MB compositor
+   texture for the layer, which carries `will-change: transform`) for a canvas
+   that stayed blank from launch to launch. The store is now given back when
+   there is nothing to draw and taken again the moment a scene seeds particles;
+   the element's CSS size is untouched, so nothing moves, and the field is
+   seeded from W/H/DPR exactly as before. */
+function fitCanvas() {
+  cv.width = Math.trunc(W * DPR); cv.height = Math.trunc(H * DPR);
+  cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  released = false;
+}
+function releaseCanvas() {
+  if (released) return;
+  released = true; needClear = false;
+  cv.width = 0; cv.height = 0;                 // drops the pixels; the box keeps its size
+}
 /* A resize event does not mean the canvas changed size. A phone browser fires
    one every time its URL bar hides or the on-screen keyboard opens, and each one
    used to reassign canvas.width/height: that throws away and reallocates the
@@ -784,10 +827,11 @@ function size() {
      the exact work the guard above is there to avoid. Compare against the
      integer that is actually stored. */
   const bw = Math.trunc(w * dpr), bh = Math.trunc(h * dpr);
-  if (w === W && h === H && dpr === DPR && cv.width === bw && cv.height === bh) return;
+  if (w === W && h === H && dpr === DPR
+      && (released ? !cv.width : cv.width === bw && cv.height === bh)) return;
   DPR = dpr; W = w; H = h;
-  cv.width = bw; cv.height = bh;
-  cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  /* A released canvas is left released: there is nothing to size it for. */
+  if (P.length && !still) fitCanvas(); else releaseCanvas();
   seed();
 }
 /* Every render() calls scene(), and scene() seeds the particles, so toggling
@@ -798,11 +842,15 @@ function size() {
 let seedKey = '';
 function seed() {
   const k = mode + '|' + W + 'x' + H + '@' + DPR;
-  if (k === seedKey) return;
-  seedKey = k;
-  const n = mode === 'storm' ? 260 : mode === 'rain' ? 170 : mode === 'snow' ? 110 : mode === 'stars' ? 90 : 0;
-  P = Array.from({ length: n }, () => ({ x: Math.random() * W, y: Math.random() * H, v: Math.random(), r: Math.random() * 2 + .6 }));
-  needClear = true;
+  if (k !== seedKey) {
+    seedKey = k;
+    const n = mode === 'storm' ? 260 : mode === 'rain' ? 170 : mode === 'snow' ? 110 : mode === 'stars' ? 90 : 0;
+    P = Array.from({ length: n }, () => ({ x: Math.random() * W, y: Math.random() * H, v: Math.random(), r: Math.random() * 2 + .6 }));
+    needClear = true;
+  }
+  /* Nothing will be drawn on this scene: hand the pixels back rather than hold
+     them (see releaseCanvas). */
+  if (!P.length) { releaseCanvas(); return; }
   startFx();
 }
 /* Reduce motion is watched rather than sampled: it was read once at load, so a
@@ -868,8 +916,18 @@ function tick() {
     }
   }
   if (!still && P.length) fxRaf = requestAnimationFrame(tick);
+  /* Reduce motion: the frame above has just blanked the canvas, and nothing
+     will be drawn on it again until the setting changes — so the pixels go back
+     (see releaseCanvas) instead of being held for a picture that cannot be
+     drawn. onMotionChange() takes the store again when the setting is turned
+     off. */
+  else if (still) releaseCanvas();
 }
-function startFx() { if (!fxRaf && !pageHidden()) fxRaf = requestAnimationFrame(tick); }
+function startFx() {
+  if (fxRaf || pageHidden()) return;
+  if (P.length && released) fitCanvas();       // the store comes back with the field
+  fxRaf = requestAnimationFrame(tick);
+}
 let lt;
 function lightning() {
   clearTimeout(lt);
@@ -932,9 +990,13 @@ function onMotionChange(e) {
   noMotion = !!e.matches;
   applySettings();
   if (still) {
-    needClear = true;
+    /* Dropping the backing store blanks the canvas in one go, which is what the
+       single clearing frame here used to do — without keeping 6.2 MB of pixels
+       for a field that will not be drawn. startFx() sizes it again when the
+       setting is turned off, so the drops resume where they stood. */
+    needClear = false;
     if (fxRaf) { cancelAnimationFrame(fxRaf); fxRaf = 0; }
-    if (!pageHidden()) fxRaf = requestAnimationFrame(tick);
+    releaseCanvas();
   } else {
     startFx();
   }
@@ -970,6 +1032,11 @@ function scene(cond, isDay, cover) {
   const orb = day ? s.orb : s.norb;
   $('#sun').style.opacity = orb === 'sun' ? (key === 'cloud' ? .55 : 1) : 0;
   $('#moon').style.opacity = orb === 'moon' ? .95 : 0;
+  /* Whatever this scene has just shown starts moving again at once; whatever it
+     has just hidden stops once its 1.2s fade is over (see idleAnim). */
+  resumeShown();
+  clearTimeout(idleT);
+  idleT = setTimeout(pauseHidden, 1300);
   seed(); lightning();
 }
 
