@@ -2620,6 +2620,90 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — accessibility & semantics (2026-11-13, 16:00 IST pass)
+- **The ✕ that deletes a saved city was a control nested inside another
+  control.** Each row in the Cities sheet was a `<button>`, and the delete
+  control inside it was a `<span role="button" tabindex="0">` — interactive
+  content inside interactive content, which HTML does not allow and which
+  assistive technology is free to flatten. On a phone that is the whole problem:
+  the row is exposed as one button and the ✕ inside it has no reliable identity
+  of its own, so the only way to remove a city can disappear from the
+  accessibility tree entirely. It also put the visible "✕" inside the row's
+  text, so the row's spoken name no longer matched what the row says on screen.
+  The row is now a plain container with two sibling controls — the place
+  (`.tap`) and the ✕ (`.rm`, a real `<button>`) — which is what the markup
+  always meant. Both keep their own name and their own tab stop, and a click on
+  the ✕ still removes without selecting, exactly as before.
+- **The row icons were part of the spoken name.** The 📍/🔎/🏙️ glyph is
+  decoration; the row's name is stated explicitly, so the glyph is now
+  `aria-hidden`. The visible text is untouched.
+- **The hourly strip could not be scrolled without a pointer on WebViews that
+  do not make scroll containers focusable by themselves.** Chromium has put a
+  scrollable box in the tab order since 132, and the app's focus-restore code
+  already treats `#main .hrs` as a tab stop — on an older WebView (Android 6–10
+  devices whose WebView cannot be updated) that code path was dead and the next
+  8 hours could not be reached by keyboard or switch access. It carries
+  `tabindex="0"` now, so it is a tab stop everywhere, and it looks identical
+  where it already was one.
+- Nothing visible changed. In-page A/B — the old row markup and the new one
+  rendered in the *same* page session, so backdrop blur, scene and scroll are
+  identical — gives **0 differing pixels of 1 548 000** for the saved-places
+  list and for a search-results list, with every element's layout box
+  (`offsetLeft/Top/Width/Height`) and computed style identical apart from
+  `appearance`/`unicode-bidi` on the elements that changed tag and the flex
+  `margin-left:auto` the new sibling layout replaces. The press animation, the
+  row's lit background and its hit area are unchanged: the place control keeps
+  the row's padding under its own negative margin, so a tap anywhere on the row
+  still lands on the place (measured: `elementFromPoint` at the row's corner
+  returns `.tap`).
+- Verified: `node --check` on the page's script; headless Chromium loads with
+  **zero console messages, warnings and page errors** across seven payloads
+  (clear, cloudy, rain, snow, storm, fog, an unknown WMO code) through a smoke
+  run of the tabs, the sheet with a typed query, a removal, the °C/°F toggle,
+  the settings panel and a 400×780 resize at DPR 3. The fix itself, measured
+  with the sheet settled and its list scrolled to the top (axe skips rows that
+  are off screen, so an unsettled sheet reports nothing at all — the first
+  reading of this pass was a false clean): axe-core goes from
+  `nested-interactive` ×3 to **none** in the sheet, and from
+  `scrollable-region-focusable` ×1 to **none** on the forecast screen. The ✕ is
+  a sibling `<button>` now, reachable by Tab in its own right; Enter and Space
+  on it remove **exactly one** city per press (the old `keydown` shim is skipped
+  for a real button, so a native activation cannot fire twice); a click on it
+  removes without selecting; and the row's spoken name is "Pune, Maharashtra,
+  India" against visible text "Pune Maharashtra, India".
+- `versionCode 67` / `versionName 1.10.3` in `android/AndroidManifest.xml` (up
+  from 66 / 1.10.2), same signing key. `android/assets/index.html` is
+  byte-identical to `web/index.html` (SHA-256 `2df0eb7d…`). The APK **was**
+  rebuilt from this tree with `android/build.sh` (JDK 17, build-tools 34.0.0,
+  platform 34), bundles the current page, carries `versionCode 67` /
+  `versionName 1.10.3`, and `.github/scripts/verify_apk.py` agrees on all three.
+  `CHECKSUMS.txt` and the `sha256sum` block in `README.md` carry the new digest,
+  `3ce265eae573fa9c63e74985c518e5b73cc0c294bc327c04f158155f62a0b329`
+  (`verify_docs.py` green), and `apksigner verify --print-certs` still reports
+  the project key (`2035d69f…`, `CN=Liquid Weather`).
+- Left alone deliberately. (1) The ten rows axe still flags for
+  `label-content-name-mismatch` keep their decorative glyph: the check compares
+  the row's spoken name with *all* the text painted in it, emoji included, so
+  the only way to silence it is to put "🏙️"/"🔎"/"📍" into the spoken name —
+  which is exactly what a screen reader should not be read. A decorative icon
+  is not a text label for WCAG 2.5.3 (voice control says "Pune", not the
+  glyph), so the finding stays as a known heuristic, not a defect. (2) The five
+  sliders still have no `aria-valuetext`,
+  so a range is announced as "Transparency, 50" without the "%" the panel shows
+  next to it; the value is announced and the unit is visible, so this is a
+  preference rather than a defect, and it is the settings panel's own pass.
+  (3) The top bar's city name is still 2.97:1 on the fog scene, as the 11
+  November pass recorded — a contrast fix is a colour change and the UI is
+  frozen. (4) The forecast screen still has no live region announcing that a
+  load finished; `#main` is replaced wholesale, and a polite region around it
+  would re-announce the whole page on every refresh, so that needs a pass that
+  can measure the announcement order rather than a guess. (5) The two dialogs
+  still do not trap Tab: the nav sits above both panels and is deliberately how
+  you leave them (recorded when the panels were made `inert`). (6) The
+  `#gear` click handler in `openSettings` still names an element that the
+  markup no longer contains — dead code, not an accessibility defect, and
+  removing it belongs to a hygiene pass.
+
 ### Fixed — render performance (2026-11-13, 12:00 IST pass)
 - **A blank particle canvas kept 6.2 MB of pixels for the whole session.** The
   `#fx` backing store is 430×900 at the device pixel ratio, so 860×1800 at DPR 2

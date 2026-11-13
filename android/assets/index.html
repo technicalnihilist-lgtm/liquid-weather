@@ -74,7 +74,8 @@ main::-webkit-scrollbar{display:none}
 .sh-i b{display:block;font-size:16px;font-weight:700}
 .sh-i small{display:block;font-size:12.5px;color:var(--tx2);margin-top:2px}
 .sh-i .ic{font-size:20px;width:26px;text-align:center;flex:none}
-.sh-i .rm{margin-left:auto;font-size:17px;color:var(--tx2);padding:6px 2px 6px 10px;flex:none}
+.sh-i .rm{margin-left:auto;border:0;background:none;font:inherit;font-size:17px;color:var(--tx2);padding:6px 2px 6px 10px;flex:none;cursor:pointer;text-align:left}
+.sh-i .tap{display:flex;align-items:center;gap:12px;flex:1;min-width:0;border:0;background:none;font:inherit;color:inherit;text-align:left;cursor:pointer;padding:12px 0 12px 14px;margin:-12px 0 -12px -14px}
 .sh-empty{font-size:14px;color:var(--tx2);padding:18px 6px;line-height:1.5}
 .sh-r{width:46px;flex:none;border-radius:18px;border:0;background:rgba(255,255,255,.1);color:var(--tx);font:inherit;font-size:19px;cursor:pointer;box-shadow:inset 1px 1px 1px var(--edge2)}
 .sh-r:active{background:rgba(255,255,255,.24)}
@@ -1908,7 +1909,7 @@ function render(p, w) {
   <div class="bar"><button class="loc" id="openSearch" title="Change city"><span>📍 ${esc(p.name)}${p.sub ? ', ' + esc(p.sub) : ''}</span></button><span class="ub"><button class="u glass" id="unit">°${F ? 'F' : 'C'}</button></span></div>
   <div class="hero"><h1>${esc(p.name)}</h1><div class="temp">${T(c.temperature_2m)}°</div><div class="cond">${esc(desc)}</div><div class="hl">H:${T(hiToday)}°  L:${T(loToday)}°</div></div>
   <div class="card glass"><div class="sum">${esc(summarise(w, cond, c.weather_code))}${sun.rise && sun.set ? `<div class="sunline">🌅 Sunrise ${sun.rise} · 🌇 Sunset ${sun.set}</div>` : ''}</div></div>
-  <div class="card glass"><div class="lbl">🕐 Hourly forecast</div><div class="hrs" role="group" aria-label="Hourly forecast">${hours}</div></div>
+  <div class="card glass"><div class="lbl">🕐 Hourly forecast</div><div class="hrs" role="group" aria-label="Hourly forecast" tabindex="0">${hours}</div></div>
   <div class="card glass"><div class="lbl">📅 7-day forecast</div>${days}</div>
   <div class="grid">
     <div class="card glass"><div class="lbl">☀️ UV index</div><b>${uv.toFixed(0)}</b><span>${uvT}</span></div>
@@ -2336,8 +2337,18 @@ function row(o) {
      carry data-rm="-1" that nothing read, so it announced "Remove" and did
      nothing at all. */
   const idx = places.findIndex(p => samePlace(p, o));
+  /* The ✕ used to sit *inside* the row's <button>, as a role="button" span —
+     interactive content inside interactive content, which HTML forbids and
+     which assistive technology is free to flatten: the row was announced as
+     one button and the delete control inside it had no reliable identity of
+     its own. It also put the visible "✕" inside the row's text, so the row's
+     spoken name no longer matched what it says on screen. The row is a plain
+     container now with two sibling controls — the place, and the ✕ — which is
+     what the markup always meant. Nothing moves: the wrapper keeps the same
+     box, the place button keeps the row's left side and the ✕ keeps its place
+     at the right edge (see .sh-i .tap / .sh-i .rm). */
   const right = idx >= 0
-    ? `<span class="rm" data-rm="${idx}" role="button" tabindex="0" aria-label="Remove ${esc(o.name)}">✕</span>` : '';
+    ? `<button class="rm" data-rm="${idx}" aria-label="Remove ${esc(o.name)}">✕</button>` : '';
   const isSaved = idx >= 0;
   /* The row's spoken name was taken from its contents, and its contents include
      the ✕ — so a row for a saved city was announced as "Mumbai India Remove
@@ -2347,9 +2358,10 @@ function row(o) {
      the °C/°F button's is; the visible text is untouched and the ✕ keeps its
      own label. */
   const name = o.name + (o.sub ? ', ' + o.sub : '');
-  return `<button class="sh-i" aria-label="${esc(name)}" data-lat="${o.lat}" data-lon="${o.lon}" data-name="${esc(o.name)}" data-sub="${esc(o.sub || '')}">
-    <span class="ic">${isSaved ? '📍' : '🔎'}</span>
-    <span style="min-width:0"><b>${esc(o.name)}</b><small>${esc(o.sub || '')}</small></span>${right}</button>`;
+  return `<div class="sh-i" data-lat="${o.lat}" data-lon="${o.lon}" data-name="${esc(o.name)}" data-sub="${esc(o.sub || '')}">
+    <button class="tap" aria-label="${esc(name)}">
+    <span class="ic" aria-hidden="true">${isSaved ? '📍' : '🔎'}</span>
+    <span style="min-width:0"><b>${esc(o.name)}</b><small>${esc(o.sub || '')}</small></span></button>${right}</div>`;
 }
 
 let lastResults = [];      // last painted results, reused when the sheet is repainted (after a removal)
@@ -2385,10 +2397,11 @@ function paintSheet(q, results) {
     </div>`;
   if (saved.length) {
     html += `<div class="sh-h" role="heading" aria-level="2">Saved places</div>` + saved.map(p =>
-      `<button class="sh-i" aria-label="${esc(p.name + (p.sub ? ', ' + p.sub : ''))}" data-go="${places.indexOf(p)}">
-        <span class="ic">🏙️</span>
-        <span style="min-width:0"><b>${esc(p.name)}</b><small>${esc(p.sub || '')}</small></span>
-        <span class="rm" data-rm2="${places.indexOf(p)}" role="button" tabindex="0" aria-label="Remove ${esc(p.name)}">✕</span></button>`).join('');
+      `<div class="sh-i">
+        <button class="tap" aria-label="${esc(p.name + (p.sub ? ', ' + p.sub : ''))}" data-go="${places.indexOf(p)}">
+        <span class="ic" aria-hidden="true">🏙️</span>
+        <span style="min-width:0"><b>${esc(p.name)}</b><small>${esc(p.sub || '')}</small></span></button>
+        <button class="rm" data-rm2="${places.indexOf(p)}" aria-label="Remove ${esc(p.name)}">✕</button></div>`).join('');
   }
   if (q.trim()) {
     html += `<div class="sh-h" role="heading" aria-level="2">Results</div>`;
@@ -2629,6 +2642,9 @@ function removeSaved(i) {
 listEl.addEventListener('keydown', e => {
   const rm = e.target.closest && e.target.closest('.rm');
   if (!rm) return;
+  /* the ✕ is a real <button> now, so Enter and Space already activate it and
+     calling click() here as well would remove two cities per key press */
+  if (rm.tagName === 'BUTTON') return;
   if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
     e.preventDefault(); e.stopPropagation();     // a span doesn't activate itself; the row button must not fire
     rm.click();
