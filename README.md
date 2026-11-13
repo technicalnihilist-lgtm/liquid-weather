@@ -30,7 +30,7 @@ Verify your download if you like — the SHA-256 is in [`CHECKSUMS.txt`](CHECKSU
 
 ```bash
 sha256sum LiquidWeather.apk
-# 397900bc27f5539aa664db1d60447fcd1cd4307a0d8cc8499b10f3d1bdcb3a01
+# 16859bcf0cfaf28612e1b78ff4ee83f7b592f1fa9caa7ed3df3fb4c1b78a9a1c
 ```
 
 ---

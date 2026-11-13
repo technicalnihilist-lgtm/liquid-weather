@@ -3902,6 +3902,69 @@ reached the APK until now).
   .github/scripts/verify_apk.py .`, `python3 .github/scripts/verify_docs.py .`
   and `sha256sum -c` on the committed APK, all green; `apksigner verify
   --print-certs` on the committed APK.
+## [1.11.1] — 2026-11-14
+
+### Fixed — memory & lifecycle (2026-11-14, 02:00 IST pass)
+- **With Reduce motion on, every render of a rainy sky allocated the whole
+  particle backing store only to throw it away.** The canvas-release work in
+  1.11 gives the `#fx` pixels back on any scene that seeds no particles, and
+  `tick()` gives them back again under Reduce motion — but `startFx()` sized the
+  canvas *before* it knew there was nothing to draw, so each render of a rain,
+  snow or storm scene on a reduced-motion device asked for 860×1800×4 bytes
+  (6.19 MB), cleared it and handed it straight back. Nothing is drawn in that
+  session at all, so the allocation bought nothing: `startFx()` now returns
+  after releasing the store when the setting is on. Measured in headless
+  Chromium with the query emulated, counting `canvas.width` assignments over
+  twelve renders of a rain scene: **3 → 0**. The canvas a reduced-motion
+  session shows is the same blank box it showed before (0 lit pixels either
+  way).
+- **A released canvas could be left with a frame still scheduled for it, and
+  the particle loop then ran for the rest of the session against a 0×0
+  canvas.** `releaseCanvas()` dropped the pixels but left the pending
+  `requestAnimationFrame` alone, and `startFx()` returned early whenever a frame
+  was already scheduled — so a scene seeded in the gap between a release and
+  that frame (rain → the cloud scene `renderSkeleton()` paints → a clear night,
+  which is what a city switch does) never got its canvas back: `P` held 90
+  stars, `cv.width` stayed 0, and the loop went on requesting frames and drawing
+  into nothing. The visible result was **a clear night with no stars at all**
+  after another city's rain, at a frame per frame for as long as the app was
+  open. `releaseCanvas()` now cancels the frame it has made pointless, and
+  `startFx()` takes the store back before it looks at the frame it already has.
+  Measured in headless Chromium, running the three scene changes in one task
+  the way a repaint does: **0 lit canvas pixels before, 1 670 after** — the
+  star field the design draws, restored.
+- Verified: `node --check` on the page's script; headless Chromium loads of the
+  old and new file with mocked forecast, geocoder, Commons and image responses
+  report **zero console messages and zero page errors** in both; an A/B of the
+  two files across seven states (clear night, rain day, cloudy night, storm
+  night, snow day, settings panel, search sheet) shows `#main`'s markup,
+  the active scene, the sun/moon/cloud opacities, the `--k/--glass/--blur/--dp/
+  --pr/--cc` variables, the canvas geometry and the computed style of the phone,
+  sky, orb layer, clouds, `#fx`, `#photo`, the bar, hero, card, hourly strip, a
+  day row, the grid, the nav and the pill **identical** — no layout, colour,
+  type, gradient, glass value, wording or timing moved.
+- `versionCode 70` / `versionName 1.11.1` in `android/AndroidManifest.xml` (up
+  from 69 / 1.11), same signing key, so it installs over 1.11.
+  `android/assets/index.html` is byte-identical to `web/index.html` (SHA-256
+  `2967318b…`); the APK was rebuilt from this tree with `android/build.sh`
+  (JDK 17, build-tools 34.0.0, platform 34), bundles that page,
+  `.github/scripts/verify_apk.py .` agrees on the page and on
+  `versionCode 70` / `versionName 1.11.1`, `apksigner verify --print-certs`
+  reports the project key (`2035d69f…`, `CN=Liquid Weather`), and
+  `CHECKSUMS.txt`, `sha256sum -c` and the README's digest block carry the new
+  digest `16859bcf0cfaf28612e1b78ff4ee83f7b592f1fa9caa7ed3df3fb4c1b78a9a1c`
+  (105 KB) — `verify_docs.py` green.
+- Left alone, re-measured and still not worth a change: the 60-second refresh
+  interval ticking while the page is hidden (it returns immediately, and the
+  WebView shell pauses the renderer on `onPause`), the `deviceorientation`
+  subscription staying open while the parallax is halted by Reduce motion, and
+  the photo layer building one `Image` per render on an already-decoded
+  picture. No other leak was found in this pass's area: 300 random actions
+  (tabs, sliders, sheet opens and closes, searches, saves, removals, unit
+  toggles, resizes, visibility flips, scene changes) leave the listener count
+  flat, one interval, no pending timers at rest and the DOM at 229–291 nodes,
+  with no frame requested while the page is hidden.
+
 ## [1.11] — 2026-11-13
 
 The day's release, cut from the 22:00 IST pass. It publishes everything the
@@ -3999,7 +4062,9 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.10...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.11.1...HEAD
+[1.11.1]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.11.1
+[1.11]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.11
 [1.10]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.10
 [1.9.1]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.9.1
 [1.9]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.9

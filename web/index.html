@@ -808,6 +808,16 @@ function releaseCanvas() {
   if (released) return;
   released = true; needClear = false;
   cv.width = 0; cv.height = 0;                 // drops the pixels; the box keeps its size
+  /* A released canvas has nothing to draw, so the frame that was scheduled for
+     the field it used to hold has nothing to draw either. It was left to run:
+     the loop went on requesting frames against a 0×0 canvas until its next
+     frame noticed the empty field, and a scene seeded in that gap (the field
+     is rebuilt for a new scene, and startFx() saw a frame already scheduled
+     and returned) left the loop running for the rest of the session — a clear
+     night after another city's rain drew no stars at all, at a frame per
+     frame. Nothing is dropped from the schedule that the next scene does not
+     re-arm through startFx(). */
+  if (fxRaf) { cancelAnimationFrame(fxRaf); fxRaf = 0; }
 }
 /* A resize event does not mean the canvas changed size. A phone browser fires
    one every time its URL bar hides or the on-screen keyboard opens, and each one
@@ -925,8 +935,21 @@ function tick() {
   else if (still) releaseCanvas();
 }
 function startFx() {
-  if (fxRaf || pageHidden()) return;
-  if (P.length && released) fitCanvas();       // the store comes back with the field
+  if (pageHidden()) return;                    // nothing to draw while the page is away
+  /* Reduce motion is the one case with nothing to draw at all: the field is
+     never painted, and the store is given back rather than held (see
+     releaseCanvas). Sizing it first only to clear it and hand it straight back
+     — which is what every render of a rainy scene did with the setting on —
+     allocated and dropped the whole 860×1800 backing store, 6.19 MB, for a
+     picture that cannot be drawn. */
+  if (still) { releaseCanvas(); return; }
+  /* The store comes back with the field, and before the check below: a frame
+     already scheduled for the previous scene made startFx() return with the
+     canvas still released, and that frame's loop then ran on a 0×0 canvas —
+     drawing nothing, for the rest of the session, with the new scene's
+     particles invisible (see releaseCanvas). */
+  if (P.length && released) fitCanvas();
+  if (fxRaf) return;
   fxRaf = requestAnimationFrame(tick);
 }
 let lt;
