@@ -2620,6 +2620,41 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Clean — memory & lifecycle (2026-11-14, 22:00 IST pass)
+- **Nothing shippable found in the area; the page is unchanged and no fix is
+  carried in this pass.** The lifecycle code path was read end to end and then
+  exercised rather than eyeballed: the particle field (`size()`, `seed()`,
+  `fitCanvas()`, `releaseCanvas()`, `startFx()`, `tick()`, `lightning()`,
+  `onMotionChange()`), the visibility handlers, the parallax engine (`queue()`,
+  `halt()`, `resume()`, `phoneBox`, `navCentres`), the focus-hold window, the
+  photo layer and its lookup (`showPhoto()`, `fetchCityPhoto()`, `photoFail`),
+  the forecast cache (`cache`, `preFail`, `pruneCache()`), the four `storage`
+  handlers, every `setTimeout`/`setInterval`/`requestAnimationFrame` owner in
+  the page, and `MainActivity`'s `onPause`/`onResume`/`onDestroy` teardown.
+- **What was measured, and came back flat.** In headless Chromium (Chrome 158,
+  430×900 at DPR 2) with the forecast, geocoder, Commons and image responses
+  mocked: 60 unit toggles, 30 sheet open/search/close cycles, 30 settings
+  open/slider/close cycles, 20 visibility flips, 12 viewport resizes and 160
+  mixed random actions (tabs, sliders, searches, saves, removals, scrolls,
+  Escape, visibility) leave **event listeners flat at 26–27** (window,
+  document, `#main`, `#track`, `#q`, `#shList`, `#r_tr`, `.phone`), **one
+  interval**, **zero pending timers at rest**, **one scheduled frame** (the
+  running rain field), the DOM at **231–249 nodes** and the JS heap at
+  **1 018 → 1 059 KB** after forced GC — no growth with repetition. Zero console
+  messages and zero page errors in every run, with and without Reduce motion;
+  the reduced-motion load holds no canvas backing store (`#fx` 0×0, 0 frames).
+- **Left alone, re-measured and still not worth a change.** (1) The `#fx`
+  backing store (6.19 MB) is still held while the page is hidden — releasing it
+  on `visibilitychange` and re-taking it on return is a wash that risks a
+  reallocation hitch exactly when the reader comes back, so it stays. (2) The
+  60-second `autoRefresh` interval still ticks in the background; it returns
+  immediately, and the shell's `onPause()` pauses the renderer. (3) The
+  `deviceorientation` subscription still stays open while the parallax is halted
+  by Reduce motion. (4) `showPhoto()` still builds one `Image` per render of an
+  already-decoded picture. (5) The untracked `setTimeout(size, 250)` on
+  `orientationchange` can stack a few timers during a rapid rotation; each one
+  measures and returns, and the canvas guard makes all but the first a no-op.
+
 ### Fixed — build & release hygiene (2026-11-14, 16:00 IST pass)
 - **The store listing copy advertised a release and an APK size that were both
   out of date.** `STORE.md` — the copy-paste block a store publishes — opened
@@ -4142,6 +4177,74 @@ repository.
   .github/scripts/verify_apk.py .`, `python3 .github/scripts/verify_docs.py .`
   and `sha256sum -c` on the committed APK, all green.
 
+## [1.12] — 2026-11-14
+
+The day's release, cut from the 22:00 IST pass. It publishes everything the
+programme fixed on 14 November — the 02:00, 14:00 and 16:00 passes — as one
+version, and rebuilds the APK so the published app is the app in the
+repository.
+
+### Fixed (carried in this release)
+- **With Reduce motion on, every render of a rainy sky allocated the whole
+  particle backing store only to throw it away** (02:00 pass, memory &
+  lifecycle): `startFx()` sized the `#fx` canvas — 860×1800×4 bytes, 6.19 MB —
+  before it knew there was nothing to draw, cleared it and handed it straight
+  back. A reduced-motion session never paints that canvas, so the allocation
+  bought nothing; `startFx()` now releases the store and returns. Measured in
+  headless Chromium with the query emulated, counting `canvas.width`
+  assignments over twelve renders of a rain scene: **3 → 0**, the same blank box
+  on screen either way.
+- **A released canvas could be left with a frame still scheduled, and the
+  particle loop then ran for the rest of the session against a 0×0 canvas**
+  (02:00 pass): a scene seeded in the gap between a release and that frame never
+  got its canvas back, so a clear night after another city's rain drew **no
+  stars at all**, at a frame per frame for as long as the app was open.
+  `releaseCanvas()` now cancels the frame it has made pointless and `startFx()`
+  takes the store back before it looks at the frame it already has: **0 lit
+  canvas pixels before, 1 670 after** — the star field the design draws.
+- **The search sheet could print the previous query's rows under a new query,
+  and a tap then saved the wrong city** (14:00 pass): `lastResults` — the cache
+  `repaintSheet()` reuses — was one global list with no record of the query it
+  answered, and four repaint paths outside the search box (`locate()`,
+  `fallbackPlace()`, `dropTwin()`, another tab's `storage` write) could paint it
+  during the 320 ms debounce. The box read "mumbai", the status line read
+  "3 results for “mumbai”", and the rows were Sapporo, Tokyo and Osaka — the
+  answer to "japan". The cache is keyed to its query now (`lastResultsQ`); a
+  repaint whose query has moved on shows the "Searching…" a new query always
+  shows, and the settled states are unchanged.
+- **The store listing advertised a release and an APK size that were both out
+  of date** (16:00 pass, build & release hygiene): `STORE.md` opened with
+  "matches the current release, `v1.10`" and quoted 101 KB in three places while
+  v1.11 published a 105 KB APK. The version and all three size figures now
+  match the published release, and `.github/scripts/verify_docs.py` — which
+  already guarded the README's digest — now fails when the README's release
+  label and `STORE.md`'s disagree, which is how v1.10 outlived v1.11.
+- The 22:00 pass itself found nothing shippable in its area (memory &
+  lifecycle), so the page in this release is the same page as 1.11.2; only the
+  version metadata changed. See the "Clean — memory & lifecycle (2026-11-14,
+  22:00 IST pass)" entry above for what was audited, what was measured and what
+  was deliberately left alone.
+
+### Notes
+- `versionCode 72` / `versionName 1.12` in `android/AndroidManifest.xml` (up
+  from 71 / 1.11.2), same signing key, so it installs over every 1.11 build.
+- The APK was rebuilt from this tree with `android/build.sh` (JDK 17,
+  build-tools 34.0.0, platform 34). It bundles `assets/index.html`
+  byte-identical to `web/index.html` (SHA-256 `7d26254c…`), carries
+  `versionCode 72` / `versionName 1.12`, and `.github/scripts/verify_apk.py`
+  agrees on all three. `CHECKSUMS.txt` carries the new digest,
+  `4b1daaaf8cfa069433b9ba8e3641bf57acdc168f3f128c04464e17f88330d068` (105 KB),
+  as does the `sha256sum` block in `README.md` (checked by `verify_docs.py`),
+  and `apksigner verify --print-certs` reports the project key (`2035d69f…`,
+  `CN=Liquid Weather`).
+- Verified: `node --check` on the page's script; headless Chromium loads of
+  `web/index.html` with mocked forecast, geocoder, Commons and image responses
+  reporting **zero console errors and zero page errors**, with and without
+  Reduce motion; the lifecycle stress and random-action runs recorded above;
+  `python3 .github/scripts/verify_apk.py .`, `python3
+  .github/scripts/verify_docs.py .` and `sha256sum -c` on the committed APK, all
+  green; `apksigner verify --print-certs` on the committed APK.
+
 ## [1.0] — 2026-10-26
 
 First public release.
@@ -4172,7 +4275,9 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.11.1...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.12...HEAD
+[1.12]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.12
+[1.11.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.11.2
 [1.11.1]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.11.1
 [1.11]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.11
 [1.10]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.10

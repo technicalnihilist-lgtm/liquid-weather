@@ -5,7 +5,7 @@ A glassy, animated weather app — the exact same design as the original `Liquid
 **No ads. No account. No sign-up. No tracking.** Just open it, allow location (or pick a city), and read the weather.
 
 **Try it right now in your browser:** https://technicalnihilist-lgtm.github.io/liquid-weather/  
-**Latest APK:** [v1.11](https://github.com/technicalnihilist-lgtm/liquid-weather/releases/latest)
+**Latest APK:** [v1.12](https://github.com/technicalnihilist-lgtm/liquid-weather/releases/latest)
 
 <p align="center">
   <img src="screenshots/home.png" width="250" alt="Clear night in New Delhi">
@@ -30,7 +30,7 @@ Verify your download if you like — the SHA-256 is in [`CHECKSUMS.txt`](CHECKSU
 
 ```bash
 sha256sum LiquidWeather.apk
-# 9e334cb2c2f511fee829f27d5b2079d85a69e0693ef362b2cd332807290693fb
+# 4b1daaaf8cfa069433b9ba8e3641bf57acdc168f3f128c04464e17f88330d068
 ```
 
 ---
