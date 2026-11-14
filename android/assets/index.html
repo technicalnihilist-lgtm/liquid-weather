@@ -2414,6 +2414,7 @@ function row(o) {
 }
 
 let lastResults = [];      // last painted results, reused when the sheet is repainted (after a removal)
+let lastResultsQ = null;   // and the query they answer: a cache with no key answers the wrong question
 /* The sheet is repainted from under the keyboard: a geocoder answer landing,
    the pinned row's name arriving, another document's saved-list write, a
    removal. Only removeSaved() ever put focus back, so a reader who had tabbed
@@ -2437,7 +2438,19 @@ function paintSheet(q, results) {
   /* removeSaved() repaints the sheet with the query still in the box; it used to
      pass no results at all, so `results.length` threw and the list kept showing
      the city that had just been deleted. */
-  if (results === undefined) results = lastResults; else lastResults = results;
+  /* The cache is keyed by the query it answers. repaintSheet() is called from
+     places the search box does not control — locate() naming the pinned row,
+     fallbackPlace(), dropTwin(), another tab's write to the saved list — so one
+     landing in the 320 ms between a keystroke and the debounced search painted
+     the *previous* query's rows under the new one: the box read "mumbai" over
+     the three Japanese cities of "japan", the status line said "3 results for
+     “mumbai”", and the first row saved Tokyo for a reader who had typed Mumbai.
+     A cache that does not answer this query is no cache: the sheet shows the
+     "Searching…" a new query always shows, and the search already on its way
+     paints the rows that belong to it. */
+  const key = q.trim();
+  if (results === undefined) results = lastResultsQ === key ? lastResults : null;
+  else { lastResults = results; lastResultsQ = key; }
   const saved = places.filter(hasFix);
   const here = places[cur];
   let html = `<div style="display:flex;gap:8px;margin-bottom:6px">

@@ -3902,6 +3902,61 @@ reached the APK until now).
   .github/scripts/verify_apk.py .`, `python3 .github/scripts/verify_docs.py .`
   and `sha256sum -c` on the committed APK, all green; `apksigner verify
   --print-certs` on the committed APK.
+## [1.11.2] — 2026-11-14
+
+### Fixed — search & geocoding (2026-11-14, 14:00 IST pass)
+- **The search sheet could print the previous query's rows under a new query,
+  and a tap then saved the wrong city.** `lastResults` — the cache
+  `repaintSheet()` reuses so a repaint does not throw away the rows on screen —
+  was one global list with no record of the query it answered. `repaintSheet()`
+  runs from four places the search box does not control: `locate()` naming the
+  pinned row, `fallbackPlace()`, `dropTwin()`, and another tab's write to the
+  saved list (the `storage` handler). Any of those landing in the 320 ms between
+  a keystroke and the debounced `search()` painted the *previous* query's rows
+  with a status line naming the *new* query. Measured in headless Chromium with
+  mocked geocoder answers: the box read "mumbai", the status line read
+  "3 results for “mumbai”", and the three rows on screen were Sapporo, Tokyo and
+  Osaka — the answer to "japan" — so the first row saved Tokyo for a reader who
+  had typed Mumbai. The cache is now keyed by the query it answers
+  (`lastResultsQ`); a repaint whose query has moved on shows the same
+  "Searching…" a new query always shows, and the search already on its way
+  paints the rows that belong to it. Same trace after the change: box "mumbai",
+  status "Searching…", no result rows, and 320 ms later "1 result for “mumbai”"
+  with Mumbai — the settled states are unchanged.
+- Nothing visible changed. The sheet's markup and the computed style of
+  `#sheet`, `#q`, `#shList`, `.sh-i`, `.tap`, `b`, `small`, `.sh-h`, `#shLoc`
+  and `#shStatus` are **byte-identical** old against new in every settled state
+  (empty query with Popular, "japan", "mumbai", "india", and after a removal
+  from the results) — the edit only decides which rows exist during the gap
+  before a search lands, and that gap used to show the wrong ones. No layout,
+  spacing, colour, typography, gradient, glass value, wording or timing moved.
+- Verified: `node --check` on the page's script; headless Chromium loads of the
+  old and new page with mocked forecast, geocoder, Nominatim and Commons
+  responses report **zero console messages and zero page errors** in both; the
+  old-against-new trace above; a 90-action random pass over the sheet (searches,
+  opens and closes, taps, removals, `storage` repaints, tab switches) with no
+  duplicate row, no out-of-range delete index, no out-of-range `cur` and no
+  count/status disagreement; `python3 .github/scripts/verify_apk.py .`,
+  `python3 .github/scripts/verify_docs.py .` and `sha256sum -c` on the committed
+  APK, all green.
+- `versionCode 71` / `versionName 1.11.2` in `android/AndroidManifest.xml` (up
+  from 70 / 1.11.1), same signing key, so it installs over 1.11.1.
+  `android/assets/index.html` is byte-identical to `web/index.html` (SHA-256
+  `7d26254c…`); the APK was rebuilt from this tree with `android/build.sh`
+  (JDK 17, build-tools 34.0.0, platform 34), bundles that page, carries
+  `versionCode 71` / `versionName 1.11.2`, and `apksigner verify --print-certs`
+  reports the project key (`2035d69f…`, `CN=Liquid Weather`). `CHECKSUMS.txt`
+  and the README's digest block carry the new digest `9e334cb2…` (105 KB).
+- Left alone deliberately: (1) `countryMatches()` still matches only the start
+  of a country's name, and (2) a country query still drops a geocoder row that
+  merely shares a name with a bundled one — both change what a country query
+  returns, which is a behaviour decision, not a bug fix. (3) The offline list
+  still answers "new delhi" with nothing (the bundled row is "Delhi", and the
+  token rule needs every word to start a word of a bundled name), which is the
+  bundled data, not the matcher. (4) The 18 s worst case when both geocoders are
+  silent is the two 9 s deadlines in `getJSON` — network territory, not this
+  pass's.
+
 ## [1.11.1] — 2026-11-14
 
 ### Fixed — memory & lifecycle (2026-11-14, 02:00 IST pass)
