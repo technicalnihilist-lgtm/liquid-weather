@@ -2620,6 +2620,61 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — build & release hygiene (2026-11-14, 16:00 IST pass)
+- **The store listing copy advertised a release and an APK size that were both
+  out of date.** `STORE.md` — the copy-paste block a store publishes — opened
+  with "Everything here matches the current release, `v1.10`" and quoted
+  101 KB in three places: the fields table, the under-160-character short
+  description, and the full description's "Small on purpose" paragraph. The
+  current release is v1.11 and the APK it publishes is 107,368 bytes — 105 KB,
+  the figure `README.md` already printed — so a submission built from this file
+  would have named a version one release behind and told a reviewer the download
+  was 4 KB smaller than it is. The version and all three size figures now match
+  the published release; nothing else in the file changed.
+- **Why it cannot drift again — the fourth hand-written copy of one value.**
+  The README's `Latest APK: vX.Y` and STORE.md's "matches the current release,
+  `vX.Y`" are the same label kept in two files, and only the README's was ever
+  updated: that is how v1.10 outlived v1.11, the same way the README's digest
+  outlived seven releases before 12 November. `.github/scripts/verify_docs.py` —
+  the check that already guards that digest — now reads both labels and fails
+  when they disagree, when either is missing, or when `STORE.md` itself is gone.
+  It compares the two docs with each other and **not** with
+  `android/AndroidManifest.xml`: the manifest runs ahead of the last release
+  from the first version bump of the day until the 22:00 cut (today it says
+  1.11.2 while the newest release is 1.11), so a manifest check would fail every
+  afternoon on a state that is correct.
+- No page change: `web/index.html` is byte-identical to 1.11.2 (SHA-256
+  `7d26254c…`), so there is no APK rebuild, no `versionCode` bump and no
+  `CHECKSUMS.txt` change on this pass; the committed APK still carries
+  `versionCode 71` / `versionName 1.11.2`, and `verify_apk.py` agrees on both
+  and on the bundled page. The signature was re-checked without `apksigner` by
+  extracting `META-INF/LIQUIDWE.RSA` and hashing the signer certificate:
+  `2035d69f…`, `CN=Liquid Weather` — the project key, so the published APK still
+  installs over every 1.11 build.
+- Verified: `node --check` on the page's script; a headless Chromium load of
+  `web/index.html` with mocked forecast, Nominatim and Commons responses
+  reporting **zero console errors and zero page errors**, the hero rendering the
+  mocked 29° for Pune; `verify_docs.py` exit 0 on this tree and **exit 1 on the
+  pre-fix tree**, naming "STORE.md says its store listing matches v1.10 but
+  README.md publishes v1.11"; the same script still fails a stale README digest
+  (exit 1) and a missing `STORE.md` (exit 1), and still passes when both docs
+  carry the same older label (exit 0) — it only compares them. `verify_apk.py`
+  and `sha256sum -c` on the committed APK: green.
+- Left alone deliberately: (1) **the "105 KB" figures stay hand-written and
+  unchecked** — the same call as 12 November: a size check would fail CI on
+  every rebuild that moves the file by a kilobyte, for a number nobody downloads
+  against. (2) **`STORE.md`'s screenshot list and endpoint list are unchanged** —
+  re-checked against the tree and still accurate: four 860×1800 PNGs plus a
+  512×512 icon, and the six hosts it names are the six the page calls.
+  (3) **The release asset on GitHub still differs from the committed APK** —
+  v1.11's asset is `397900bc…`, the repository's 1.11.2 build is `9e334cb2…` —
+  because the page is rebuilt by every pass that fixes something and released
+  once a day; the release page prints the digest of its own asset, and tonight's
+  cut publishes the current one. (4) **`build.yml` still does not check
+  `versionCode` monotonicity**: the only reference for "higher than last time"
+  is git history, and a check that reads it would need a full clone in CI for a
+  value that has never regressed.
+
 ### Fixed — render performance (2026-11-13, 22:00 IST pass)
 - **Every parallax frame recalculated the style of the whole document.** The
   depth engine moved the sky, the orbs, the clouds, the particle canvas and the
