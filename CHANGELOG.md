@@ -2620,6 +2620,63 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Clean — storage robustness (2026-11-15, 22:00 IST pass)
+- **Nothing shippable found in the area; the page is unchanged and no fix is
+  carried in this pass.** The storage path was read end to end — `LS`, the five
+  keys (`lw_places`, `lw_cur`, `lw_photos`, `lw_set`, `lw_unit`), `cleanPlace`,
+  `loadPlaces`, `repairSaved`, `cleanSet`, `readPhotoStore`/`cleanPhoto`,
+  `savePhotos`/`prunePhotos`, and the three branches of the `storage` handler —
+  and then exercised rather than eyeballed, against the page that shipped as
+  1.12.3.
+- Fourteen stored states were booted one at a time in headless Chromium with a
+  mocked forecast, geocoder and Commons: every key of the wrong type; every key
+  `null`; a negative `lw_cur`; `lw_cur` at 1e9; two rows sharing one `id`; two
+  "My Location" rows; seven rows; a photo record pointing at a `javascript:`
+  URL; a photo record dated in the future; out-of-range settings
+  (`{tr:500, bl:"abc", bo:-20, dp:1e9, pr:null}`); coordinates stored as
+  strings; unparseable JSON in every key; a name carrying a NUL and an RTL
+  override; and a row with no coordinates at all. **All fourteen boot with zero
+  console errors and zero page errors**, each paints seven day rows, each lands
+  on a row that exists, and `--k` is the default glass everywhere except the two
+  runs whose stored settings are valid — which is the point.
+- The multi-document paths were driven for real. With two documents open on one
+  origin: A saves Pune and B adopts the list (both then hold two rows, each tab
+  still showing its own city), A removes it and B adopts the removal and stays
+  on a row that exists, and a settings write from A reaches B (`bl` 50 → 20).
+  120 random actions spread across the two documents — add, remove, select,
+  slider write, *Reset to default*, unit toggle, `pruneCache`, `savePhotos`,
+  `repairSaved`, a forced re-render — left every invariant intact at each of six
+  checkpoints: **at most six rows, `cur` always pointing at a real row, zero
+  photo records in memory or on disk whose key no row owns, and exactly the five
+  keys written**, with no console or page errors.
+- The quota was re-measured rather than assumed: the origin was filled to
+  **4.75 MB** (nineteen 256 KB keys) and then a city was added, a slider moved
+  and a photo record written — all three persisted and nothing threw, so nothing
+  reachable through the UI comes near the limit. `android/assets/index.html` is
+  byte-identical to `web/index.html`, so the APK in this release is the page
+  this pass audited.
+- Left alone deliberately, and why: (1) `LS.set()` still swallows a quota error,
+  as recorded in 1.6.1 — re-measured here and still unreachable, and every way of
+  telling the reader would add wording the UI freeze forbids. (2) A row dropped
+  at boot — by the six-row cap in `loadPlaces()` or by `repairSaved()`'s dedupe
+  — keeps its `lw_photos` record until the next photo write, because pruning is
+  only reachable through `pruneCache()`/`savePhotos()`; with at most six live
+  rows it cannot evict a live city's record from the twelve slots
+  `readPhotoStore()` keeps, so it is residue rather than a defect, and a prune
+  written into the boot path would be churn. (3) `savePhotos()`'s union keeps
+  this document's copy of a key even when the stored copy is newer, while the
+  `storage` handler takes the newer one; the two can only disagree inside the
+  few milliseconds before another document's event is delivered, and the
+  document holding the newer copy puts it back on its next write. (4) A stale
+  document can still write its list back over a newer one — the last-write-wins
+  race the `storage` handler narrows but cannot close; closing it needs a
+  version and merge rule, which is a behaviour change. (5) `lw_unit` is still
+  not adopted from another document: syncing it would repaint the other tab's
+  page, which the freeze forbids. (6) A stored list longer than six rows is
+  still capped in memory without being written back, and `lw_cur` is still not
+  adopted from another document — both recorded on 12 and 15 November and
+  unchanged.
+
 ### Fixed — accessibility & semantics (2026-11-15, 14:00 IST pass)
 - **Leaving the *Glass & motion* panel through the nav threw focus back to the
   tab that had opened it.** `closeSettings()` put focus back on its remembered
@@ -4380,6 +4437,67 @@ repository.
   .github/scripts/verify_apk.py .`, `python3 .github/scripts/verify_docs.py .`
   and `sha256sum -c` on the committed APK, all green.
 
+## [1.13] — 2026-11-15
+
+The day's release, cut from the 22:00 IST pass. It publishes everything the
+programme fixed on 15 November — the 08:00, 12:00 and 14:00 passes — as one
+version, and rebuilds the APK so the published app is the app in the
+repository.
+
+### Fixed (carried in this release)
+- **A corrupt `utc_offset_seconds` took the whole app down to "Offline"**
+  (08:00 pass, time & timezone correctness): the payload's own offset was
+  applied to the device clock on trust, and an out-of-range value reached
+  `toISOString()`, whose `RangeError` `show()` reads as a *link* failure — so a
+  complete forecast was replaced by the "Offline" card and never cached, for
+  good. The offset is now accepted only within ±14:00 and the instant is
+  checked for representability first. See the "time & timezone correctness"
+  entry below.
+- **A city merged out of the list kept its photo record on disk for good**
+  (12:00 pass, storage robustness): `prunePhotos()` was reachable only through
+  `pruneCache()`, whose last run happens before `dropTwin()` merges a saved copy
+  away, and `savePhotos()` writes the union of memory and disk by design — so
+  the dead record went back to storage at the next lookup and filled the twelve
+  slots the loader keeps. `dropTwin()` now prunes, and `savePhotos()` drops any
+  key no row owns before it writes. See the "storage robustness" entry below.
+- **Leaving the *Glass & motion* panel through the nav threw focus back to the
+  tab that had opened it**, dismissing the sheet from a nav tab left the focus
+  restore holding `'#'` (a `SyntaxError` thrown inside `render()`, which read as
+  a link failure and repainted the page), and **the toast was announced once and
+  silent for every repeat** (14:00 pass, accessibility & semantics). See the
+  "accessibility & semantics" entry below.
+- The 22:00 pass itself found nothing shippable in its area (storage
+  robustness), so the page in this release is the same page as 1.12.3; only the
+  version metadata changed. See the "Clean — storage robustness (2026-11-15,
+  22:00 IST pass)" entry above for what was audited, what was measured and what
+  was deliberately left alone.
+
+### Notes
+- `versionCode 76` / `versionName 1.13` in `android/AndroidManifest.xml` (up
+  from 75 / 1.12.3), same signing key, so it installs over every 1.12 build.
+- `web/index.html` is untouched by this pass and is byte-identical to 1.12.3
+  (SHA-256 `36abd077…`), and so is `android/assets/index.html`.
+- The APK was rebuilt from this tree with `android/build.sh` (JDK 17,
+  build-tools 34.0.0, platform 34). It bundles `assets/index.html`
+  byte-identical to `web/index.html`, carries `versionCode 76` /
+  `versionName 1.13`, and `.github/scripts/verify_apk.py` agrees on all three.
+  `CHECKSUMS.txt` carries the new digest, and so does the `sha256sum` block in
+  `README.md` (checked by `verify_docs.py`); `apksigner verify --print-certs`
+  reports the project key (`2035d69f…`, `CN=Liquid Weather`).
+- The APK is still 105 KB, so no size figure in `README.md` or `STORE.md`
+  moved; `STORE.md`'s release label and the README's now both name `v1.13`.
+- The README's `**Latest APK:**` line had been lost in the 15:22–15:43
+  donate-section edits, which left `verify_docs.py` failing with nothing for
+  `STORE.md` to be kept in step with; the release restores that one line, in the
+  install section, and points it at v1.13.
+- Verified: `node --check` on the page's script; headless Chromium loads of
+  `web/index.html` with mocked forecast, geocoder, Commons and image responses
+  reporting **zero console errors and zero page errors**; the fourteen-state
+  boot matrix, the two-document stress and the quota measurement recorded in
+  the 22:00 entry above; `python3 .github/scripts/verify_apk.py .`, `python3
+  .github/scripts/verify_docs.py .` and `sha256sum -c` on the committed APK, all
+  green; `apksigner verify --print-certs` on the committed APK.
+
 ## [1.12] — 2026-11-14
 
 The day's release, cut from the 22:00 IST pass. It publishes everything the
@@ -4478,7 +4596,8 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.12...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.13...HEAD
+[1.13]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.13
 [1.12]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.12
 [1.11.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.11.2
 [1.11.1]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.11.1
