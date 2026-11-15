@@ -858,6 +858,35 @@ function size() {
   if (P.length && !still) fitCanvas(); else releaseCanvas();
   seed();
 }
+/* `size()` is only ever run from a resize or a rotation, and a device pixel
+   ratio that changes while the box does not fires neither: dragging the page to
+   a display with a different scaling factor, or changing the OS display-scale
+   setting, leaves the CSS box at 430x900 and the ratio at 1 where it was 2. The
+   backing store kept the ratio it was built with, so the field was drawn at the
+   wrong scale — measured in headless Chromium, a rain field whose store stayed
+   860x1800 in a 430x900 box at DPR 1 had every drop drawn half as long and half
+   as thick as it should be (and, the other way round, at double size and
+   blurry) until the next real resize re-fitted it. Nothing else about the canvas
+   needs the ratio, so the watcher only re-runs `size()`, which already returns
+   without touching anything when the measurement it takes is the one it has.
+   A resolution query is bound to the ratio it was written with, so it is
+   re-armed for the new value after each change; the listener is added with the
+   same addEventListener/addListener fallback the reduce-motion query uses. */
+let dprMQ = null, dprOnChange = null;
+function watchDPR() {
+  if (typeof matchMedia !== 'function') return;
+  try {
+    if (dprMQ) {
+      if (dprMQ.removeEventListener) dprMQ.removeEventListener('change', dprOnChange);
+      else if (dprMQ.removeListener) dprMQ.removeListener(dprOnChange);
+    }
+    dprMQ = matchMedia('(resolution: ' + (window.devicePixelRatio || 1) + 'dppx)');
+    dprOnChange = () => { watchDPR(); size(); };
+    if (dprMQ.addEventListener) dprMQ.addEventListener('change', dprOnChange);
+    else if (dprMQ.addListener) dprMQ.addListener(dprOnChange);
+  } catch (e) { dprMQ = null; dprOnChange = null; }
+}
+watchDPR();
 /* Every render() calls scene(), and scene() seeds the particles, so toggling
    °C/°F or the ten-minute refresh re-randomised every drop on screen — the
    whole field jumped to new positions under the reader's eyes — and allocated a

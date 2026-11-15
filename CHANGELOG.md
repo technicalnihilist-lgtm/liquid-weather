@@ -2620,6 +2620,65 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — memory & lifecycle (2026-11-16, 00:00 IST pass)
+- **A device pixel ratio that changed while the canvas box did not left the
+  particle field drawing at the wrong scale.** `#fx`'s backing store is built in
+  `size()` from the box's CSS size times the ratio, and `size()` runs only from
+  `resize` and `orientationchange`. Neither fires when the ratio changes and the
+  CSS box does not — dragging the page to a display with a different scaling
+  factor, or changing the OS display-scale setting — so the store kept the ratio
+  it was built with and every drop was drawn against it: measured in headless
+  Chromium at a 430×900 box, the store stayed 860×1800 after the ratio went 2 → 1,
+  so the rain field was rasterised at twice the density and displayed at half
+  size (each drop half as long and half as thick as it should be), and the other
+  way round at double size and soft. It stayed that way until the next real
+  resize re-fitted it — including across a scene change, because `startFx()`
+  re-fits a released canvas from the same stale `W`/`H`/`DPR`. This is the one
+  signal the canvas was never listening for: MDN documents the resolution media
+  query as *the* way to see a `devicePixelRatio` change for exactly this case.
+- **The watcher only re-runs `size()`.** A `(resolution: <dpr>dppx)` query is
+  armed at load and re-armed for the new ratio after each change (a resolution
+  query is bound to the value it was written with), with the same
+  `addEventListener`/`addListener` fallback the reduce-motion query uses.
+  `size()` already returns without touching anything when the measurement it
+  takes is the one it has, so a spurious fire costs one `getBoundingClientRect()`
+  and nothing else, and a real one re-fits the store and re-seeds the field
+  exactly as a resize does today. No CSS, layout, wording, colour or timing is
+  involved: with the ratio unchanged the page is byte-identical.
+- Verified: `node --check` clean on the extracted script; a headless Chromium load
+  of `web/index.html` with the forecast, geocoder, Commons and image responses
+  mocked reporting **zero console errors and zero page errors**; and the fix
+  proved by dropping the ratio 2 → 1 at an unchanged 430×900 box — the 1.13 page
+  keeps an 860×1800 store (want 430×900, the field rasterised at twice the
+  density), this build re-fits to exactly 430×900 when the resolution query fires
+  and back to 860×1800 when the ratio returns, with the field drawn across the
+  whole canvas. The handler runs exactly once per signal (not once per re-arm),
+  and after 100 re-arms the heap is flat (881 720 → 890 900 bytes, forced GC) and
+  the listener count returns to its baseline. The 60-toggle / 40-resize /
+  40-sheet / 40-settings / 40-tab churn leaves listeners, DOM nodes and heap
+  flat, as before. With the ratio unchanged, `#main`'s markup hash, its length,
+  the document's node count, the `#fx` store and `--k/--glass/--blur/--dp/--pr/--cc`
+  are identical to 1.13, as are the computed styles of the bar, hero, hero
+  temperature, card, hourly strip, day row, grid card, nav, pill, canvas and
+  phone.
+- Version bumped to 1.13.1 (`versionCode 77`), same signing key, so it installs
+  over 1.13; `android/assets/index.html` is byte-identical to `web/index.html`.
+  The APK is rebuilt from this tree by `android/build.sh` in the staged one-shot
+  run (this pass had no Android SDK or JDK), which republishes it with a fresh
+  digest in `CHECKSUMS.txt` and the README (`6e19a4c1…` is replaced by the new
+  one) and verifies page parity, version and signer before committing.
+- Left alone deliberately: the five items the 14 November clean pass recorded are
+  unchanged and still not worth a change — the `#fx` store held while the page is
+  hidden, the 60-second `autoRefresh` tick that returns immediately, the
+  `deviceorientation` subscription kept while the parallax is halted, one
+  `Image` per render of an already-decoded photo, and the untracked
+  `setTimeout(size, 250)` on rotation. Also left: a ratio change that arrives
+  while the page is hidden still allocates the new store from `size()` rather
+  than waiting for the return, which is exactly what a resize in the background
+  already does; and the canvas still does not re-measure itself on a
+  `visualViewport` pinch, which changes no CSS pixel and so changes nothing it
+  draws.
+
 ### Clean — storage robustness (2026-11-15, 22:00 IST pass)
 - **Nothing shippable found in the area; the page is unchanged and no fix is
   carried in this pass.** The storage path was read end to end — `LS`, the five
