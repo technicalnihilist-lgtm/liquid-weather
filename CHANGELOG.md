@@ -2620,6 +2620,92 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — accessibility & semantics (2026-11-15, 14:00 IST pass)
+- **Leaving the *Glass & motion* panel through the nav threw focus back to the
+  tab that had opened it.** `closeSettings()` put focus back on its remembered
+  opener whenever the panel had been open, without asking who was holding focus
+  — and the nav sits above the panel, so a tap on another tab closed the panel
+  and then moved focus *away* from the control the reader had just used. Pressing
+  **Weather** left focus on **Glass**, where Enter reopened the settings; worse,
+  pressing **Cities** closed the panel and handed the search sheet a *Glass* tab
+  as the control it was "opened from", so dismissing the sheet landed the reader
+  on Glass too — a tab they had never touched, on a screen whose current tab was
+  Weather. Focus is now returned only when the panel was actually holding it (or
+  holding nothing at all, which is what a tap on the scrim leaves behind), the
+  line `closeSheet()` has always drawn. Measured in headless Chromium with real
+  clicks: pressing Weather with the panel open ends on **Glass → Weather**,
+  pressing Cities then Escape on **Glass → Cities**, and the sheet's recorded
+  opener is **set → cities**; the Done button and the scrim still return focus to
+  the Glass tab in both builds, unchanged.
+- **Dismissing the sheet from a nav tab left the focus restore holding `'#'`,
+  which is not a selector.** The sheet remembered the control it was opened from
+  as `'#' + back.id`, and the nav's tab buttons have no `id`, so the key became
+  `'#'`. The next render inside the four-second window — a background refresh
+  landing while nothing held focus, which is exactly what a tap on the page
+  background leaves — threw `SyntaxError` out of `querySelector` *inside*
+  `render()`, where `show()` reads any throw as a link failure: the forecast was
+  painted a second time, and a reader who had scrolled back was returned to the
+  top of the page. Only a control with an id is remembered now, and the lookup
+  is guarded, so a key that is not a selector restores nothing instead of
+  throwing. Measured: the remembered key goes `'#'` → `''`, and the same scripted
+  render that threw `SyntaxError: Failed to execute 'querySelector' on
+  'Document': '#' is not a valid selector` returns normally.
+- **The toast was announced once and silent for every repeat.** `#toast` is a
+  `role="status"` live region, and a live region speaks *additions*: writing the
+  same sentence into it again replaces one text node with an identical one, which
+  is neither an addition nor a change, so the second identical message was never
+  spoken — tapping ✕ on the pinned row twice, or add on a sixth city twice, told
+  a screen-reader user only the first time. When the text is already what is
+  being said, the region is emptied and the sentence put back on the next task,
+  which the region announces as an addition; the swap happens before the next
+  paint, so nothing on screen changes. Measured with a `MutationObserver` on
+  `#toast` across two presses of the pinned row's ✕: **one text mutation before,
+  two after** (an empty string, then the message), with the same text, the same
+  `on` class and the same opacity in both builds.
+- Nothing visible changed. `#main` is byte-identical to 1.12.2, and the computed
+  styles of the bar, hero, temp, condition, cards, grid, hourly strip, day row,
+  nav, settings panel, sheet and toast are identical (the only differences
+  reported are `transform` matrices sampled mid-animation, i.e. the instant each
+  snapshot was taken). The three fixes touch focus and live-region text only.
+- Verified: `node --check` on the page's script; headless Chromium loads of
+  `web/index.html` with mocked forecast, geocoder, Commons and image responses
+  across four scenes (clear, rain, snow, storm) with and without Reduce motion —
+  **eight runs, zero console errors and zero page errors** — each driving the
+  tabs, the sheet with a typed query, a removal, the °C/°F toggle, the sliders,
+  *Reset to default* and a 400×780 resize at DPR 3; axe-core (wcag2a/2aa,
+  wcag21a/21aa and best-practice) reports **no violations** on the forecast
+  screen and in the settings panel, and only the known
+  `label-content-name-mismatch` heuristic on the sheet's result rows, where the
+  decorative 🔎/📍 glyph is counted as text (recorded on 13 November and left
+  alone).
+- Version bumped to 1.12.3 (`versionCode 75`), same signing key, so it installs
+  over 1.12.2; `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `36abd077…`), the APK rebuilt from it with `android/build.sh` (JDK 17,
+  build-tools 34.0.0, platform 34) bundles that same page and carries
+  `versionCode 75` / `versionName 1.12.3` with v1, v2 and v3 signatures verifying
+  against the project key (`2035d69f…`, `CN=Liquid Weather`), and `CHECKSUMS.txt`
+  and the README carry the new digest (`00ecc67e…`). The APK is still 105 KB, so
+  no size figure moved and the README and store listing still name v1.12, the
+  release this build will ship in.
+- Left alone deliberately: (1) the search field and the five sliders still have
+  no visible focus ring — `.sh-in` and `#set input[type=range]` set `outline:0`
+  after the global `:focus-visible` rule — but giving them one is a visible
+  change, and the UI is frozen. (2) The five sliders still have no
+  `aria-valuetext`, so a value is announced without the "%" the panel prints
+  beside it; that is a preference, not a defect, and it is the panel's own pass.
+  (3) The forecast screen still has no live region announcing that a load
+  finished: `#main` is replaced wholesale, and a polite region around it would
+  re-announce the whole page on every refresh, so it needs a pass that can
+  measure the announcement order. (4) The two dialogs still do not trap Tab: the
+  nav sits above both panels and is deliberately how you leave them. (5) The top
+  bar's city name is still 2.97:1 on the fog scene — a contrast fix is a colour
+  change. (6) Opening the settings panel from the sheet leaves the *Cities* tab
+  as its remembered opener, so Done returns focus there rather than to Glass;
+  that is the opener rule the panel has always followed and changing it would
+  move focus somewhere the reader did not come from. (7) `#gear`'s click handler
+  is still dead code for an element the markup no longer contains — hygiene, not
+  accessibility.
+
 ### Fixed — storage robustness (2026-11-15, 12:00 IST pass)
 - **A city that was merged out of the list kept its photo record on disk for
   good.** `dropTwin()` folds a saved copy of a place into the located row when

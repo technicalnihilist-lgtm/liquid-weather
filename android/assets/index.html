@@ -1078,10 +1078,23 @@ function scene(cond, isDay, cover) {
 }
 
 /* ---------- toast ---------- */
-let tt;
+let tt, ttSay = 0;
 function toast(msg, ms) {
   const el = $('#toast');
-  el.textContent = msg;
+  /* The toast is a live region, and a live region speaks *additions*: writing
+     the same sentence into it a second time replaces the old text with
+     identical text, which is neither an addition nor a change, so the message
+     was announced once and silent every time after — pressing ✕ on the pinned
+     row twice, or add on a sixth city twice, told a screen-reader user only the
+     first time. When the text is already what is being said, the region is
+     emptied first and the sentence put back on the next task, which the region
+     announces as an addition. Nothing on screen changes: the toast is already
+     showing that sentence, and the swap happens before the next paint. */
+  const say = ++ttSay;
+  if (el.textContent === msg) {
+    el.textContent = '';
+    setTimeout(() => { if (say === ttSay) el.textContent = msg; }, 0);
+  } else el.textContent = msg;
   el.classList.add('on');
   clearTimeout(tt);
   tt = setTimeout(() => el.classList.remove('on'), ms || 3200);
@@ -1132,7 +1145,13 @@ function applyHeldFocus() {
   if (!h.key || mono() > h.until) return;
   const a = document.activeElement;
   if (a && a !== document.body) return;            // focus is already somewhere real
-  const el = document.querySelector(h.key);
+  /* A key that is not a selector restores nothing: closeSheet() could record
+     '#' for a control with no id, and querySelector('#') throws a SyntaxError
+     out of here — inside render(), so show() caught it as a *link* failure and
+     painted the screen a second time, which put a reader who had scrolled back
+     at the top of the page. */
+  let el = null;
+  try { el = document.querySelector(h.key); } catch (e) {}
   if (el && !el.closest('[inert]')) { try { el.focus({ preventScroll: true }); } catch (e) {} return; }
   /* The control itself is gone: the retry card the reader pressed has been
      replaced by the forecast it fetched. Hand focus to the first control of
@@ -2258,8 +2277,10 @@ function closeSheet() {
     if (back) {
       try { back.focus({ preventScroll: true }); } catch (e) {}
       /* the newly picked city's forecast is still loading and will replace
-         this button, so ask the render to put focus back on it */
-      holdFocusOn('#' + back.id);
+         this button, so ask the render to put focus back on it. Only a control
+         that has an id can be named this way: the nav tabs have none, and the
+         '#' this used to hand the focus restore was not a valid selector. */
+      if (back.id) holdFocusOn('#' + back.id);
     }
     if (opener) {
       sheetOpener = null;                        // one dismissal, one return
@@ -3090,7 +3111,18 @@ function closeSettings() {
   const back = setReturnFocus && document.contains(setReturnFocus) && !setReturnFocus.closest('#set')
     ? setReturnFocus : navItems.querySelector('button[data-tab="home"]');
   setReturnFocus = null;
-  if (back && wasOpen) { try { back.focus({ preventScroll: true }); } catch (e) {} }
+  /* Focus goes back only when the panel was holding it. The nav sits above the
+     panel and is how you leave it, so tapping another tab closed the panel and
+     then moved focus *back* to the tab that had opened it: pressing Weather left
+     focus on Glass, where Enter reopened the settings, and pressing Cities made
+     the search sheet record Glass as the control it was opened from, so
+     dismissing the sheet landed the reader on Glass too — a tab they had never
+     touched, on a screen whose current tab was Weather. A tap on the scrim
+     leaves focus nowhere, so that case still gets it back, and closeSheet() has
+     always drawn the line in the same place. */
+  const a = document.activeElement;
+  const hadFocus = wasOpen && (!a || a === document.body || setEl.contains(a));
+  if (back && hadFocus) { try { back.focus({ preventScroll: true }); } catch (e) {} }
 }
 for (const key of ['tr', 'bl', 'bo', 'dp', 'pr']) {
   const inp = $('#r_' + key);
