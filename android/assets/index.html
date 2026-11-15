@@ -1673,11 +1673,29 @@ function hourIndex(w) {
    crossed midnight is corrected, while a device whose clock is wrong by a day
    (which would disagree with the payload from the start) is not trusted with
    the answer, and a fresh payload behaves exactly as before. */
+/* An offset is only a timezone if it is one a place can have: real ones run
+   from -12:00 to +14:00, so anything further than a day from UTC is a corrupt
+   field, not a zone. `utc_offset_seconds` was taken on trust — checked only for
+   being a finite number — so an out-of-range value reached `new Date(...)`,
+   whose `toISOString()` throws a RangeError on a time it cannot represent.
+   That throw lands in the fetch path, at `w.fetchedDate = cityDate(w)` two
+   lines before the payload is cached, so show() caught it as a *link* failure:
+   a complete forecast was replaced by the "Offline — check your internet
+   connection" card, the payload was never cached, and the card's retry fetched
+   the same payload and failed in exactly the same way, for good. An offset no
+   place can have is now ignored exactly like a missing one, so the page falls
+   back to the payload's own clock — the path a payload without the field has
+   always taken — and the date is checked before it is converted as well, so no
+   other route to an unrepresentable instant can throw out of here either. */
+const TZ_MAX = 14 * 3600;                      // the largest offset any place uses (+14:00)
 function cityNow(w) {
-  const off = (w && typeof w.utc_offset_seconds === 'number' && isFinite(w.utc_offset_seconds)) ? w.utc_offset_seconds : null;
+  const raw = (w && typeof w.utc_offset_seconds === 'number' && isFinite(w.utc_offset_seconds)) ? w.utc_offset_seconds : null;
+  const off = (raw !== null && Math.abs(raw) <= TZ_MAX) ? raw : null;
   if (off === null) return '';
   const t = Date.now() + off * 1000;
-  return isFinite(t) ? new Date(t).toISOString() : '';
+  if (!isFinite(t)) return '';
+  const d = new Date(t);
+  return isFinite(d.getTime()) ? d.toISOString() : '';
 }
 const cityDate = w => cityNow(w).slice(0, 10);
 
