@@ -2620,6 +2620,65 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — search & geocoding (2026-11-16, 02:00 IST pass)
+- **Re-opening the search sheet did not stop the search that was already under
+  way, so the sheet came back showing results for a query that was no longer in
+  its box.** `openSheet()` clears the search box on every open, and it is called
+  while the sheet is *already* open whenever the reader taps the Cities tab (or
+  ends a nav drag on it) — the one live control above the sheet. It bumped
+  `qSeq`, which stops a late answer being *painted*, but it did neither of the
+  two things `closeSheet()` has always done: it left the 320 ms debounce
+  running, and it left the request in flight downloading. So a keystroke made
+  less than the debounce earlier fired its `search()` into the fresh sheet,
+  which painted a "Results" heading, the rows and the status line for the text
+  that had just been cleared — measured in headless Chromium with a mocked
+  geocoder: box empty, "1 result for “mumbai”", Mumbai under it, and a geocoder
+  request for a query nobody could see; with the geocoder slowed to 1.5 s the
+  same sequence left the sheet on "Searching…" instead. A request already on
+  its way was worse than painted-and-gone: it ran to its 9 s deadline and then
+  asked the second geocoder too — two requests, up to 18 s of radio, for a
+  query that had been abandoned.
+- `openSheet()` now clears the pending debounce and aborts the request in
+  flight, the same two lines `closeSheet()` carries, so a sheet that has just
+  been cleared shows what an empty box always shows: the saved rows and the
+  Popular list, and nothing on the wire.
+- Nothing visible changed. In every settled state — just opened, "mumbai",
+  "japan", "india", "zzz" — `#shList`'s markup, the status line and the
+  computed style of `#sheet`, `#q`, `#shList`, `.sh-h`, `.sh-i`, `.sh-i .tap`,
+  `.sh-i b`, `.sh-i small`, `.sh-i .rm`, `.sh-loc` and `.sh-empty` are
+  byte-identical old against new; the edit only removes a state that should
+  never have existed.
+- Verified: `node --check` clean on the extracted script; a headless Chromium
+  load of `web/index.html` with mocked forecast, geocoder, Nominatim and image
+  responses reporting **zero console errors and zero page errors**; the fix
+  proved old-against-new on the exact sequence — type "mumbai", tap the Cities
+  tab inside the debounce: old sheet "Results" + "1 result for “mumbai”" with an
+  empty box, new sheet the Popular list and no status line; and a request in
+  flight at the re-open: old build finishes it and goes on to ask Nominatim
+  (`FINISHED open-meteo`, `FINISHED nominatim`), new build aborts it and asks
+  nothing more (`ABORTED open-meteo`).
+- `versionCode 78` / `versionName 1.13.2` in `android/AndroidManifest.xml` (up
+  from 77 / 1.13.1), same signing key, so it installs over 1.13.1.
+  `android/assets/index.html` is byte-identical to `web/index.html` (SHA-256
+  `c67307e4…`); the APK was rebuilt from this tree with `android/build.sh`
+  (JDK 17, build-tools 34.0.0, platform 34), bundles that page, carries
+  `versionCode 78` / `versionName 1.13.2`, and `apksigner verify --print-certs`
+  reports the project key (`2035d69f…`, `CN=Liquid Weather`). `CHECKSUMS.txt`
+  and the README's digest block carry the new digest `6bcab5e5…` (105 KB, so no
+  size figure moved).
+- Left alone deliberately: (1) a repaint that lands while focus sits on a
+  *result* row still drops focus to `<body>`, because `sheetFocusKey()` names
+  only `data-go`/`data-rm2`/`data-rm` controls and the result and Popular rows
+  carry none — an accessibility defect, and it waits for that pass rather than
+  being half-fixed from here; (2) `countryMatches()` still matches only the
+  start of a country's name, a country query still drops a geocoder row that
+  merely shares a name with a bundled one, "new delhi" still finds nothing
+  offline, and the 18 s worst case when both geocoders are silent is still
+  `getJSON`'s two deadlines — all four change what a query returns and so are
+  behaviour decisions, not bug fixes; (3) a punctuation-only query ("--",
+  ",,") is still sent to both geocoders before the bundled list answers, which
+  is a wasted request but not a wrong answer.
+
 ### Fixed — memory & lifecycle (2026-11-16, 00:00 IST pass)
 - **A device pixel ratio that changed while the canvas box did not left the
   particle field drawing at the wrong scale.** `#fx`'s backing store is built in
