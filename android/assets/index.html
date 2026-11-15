@@ -357,6 +357,19 @@ function savePhotos(drop) {
      union below is exactly what would otherwise put them straight back. */
   if (drop) for (const k of drop) delete disk[k];
   for (const k of Object.keys(disk)) if (!(k in photoStore)) photoStore[k] = disk[k];
+  /* Nothing is written for a key that no row owns any more. prunePhotos()
+     empties the store when it is called, but it was only ever reached through
+     pruneCache(), and two paths remove a row without going through it:
+     dropTwin() merges a saved copy into the located row, and locate() gives
+     that row a new key when the fix moves. Both left the old record in memory,
+     and the union above wrote it back at the next lookup — one dead record per
+     place the reader ever located in, filling the twelve slots readPhotoStore()
+     keeps until the live city's record was the one the cap dropped, so it was
+     looked up again at every launch. Filtering at the single point every write
+     goes through means no path can persist a record no row can read, whether or
+     not it remembered to prune. */
+  const live = new Set(places.map(photoKeyFor));
+  for (const k of Object.keys(photoStore)) if (!live.has(k)) delete photoStore[k];
   LS.set('lw_photos', photoStore);
 }
 function prunePhotos() {
@@ -1410,6 +1423,13 @@ function dropTwin(keep) {
     if (at >= 0) cur = at;
   }
   cur = Math.max(0, Math.min(cur, places.length - 1));
+  /* The row that was just merged away owns nothing any more, its photo record
+     included: it stayed in `lw_photos` under the key of a city no row holds,
+     and every later write put it back on disk. The located row's own key
+     changes here too when the fix moves, so the record under its old key goes
+     the same way. prunePhotos() is the one place that knows which keys are
+     live, and it writes only when something was actually dead. */
+  prunePhotos();
 }
 async function locate(silent) {
   const el = places.find(p => p.myLoc);

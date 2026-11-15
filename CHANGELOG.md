@@ -2620,6 +2620,59 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — storage robustness (2026-11-15, 12:00 IST pass)
+- **A city that was merged out of the list kept its photo record on disk for
+  good.** `dropTwin()` folds a saved copy of a place into the located row when
+  a fix lands (same name, within 25 km), and that row's key goes away with it.
+  Its record in `lw_photos` did not: `prunePhotos()` is the only code that knows
+  which keys are live, and it was reachable only through `pruneCache()` — whose
+  last run happens *before* the merge, so the newly dead key was never seen by
+  it. Nothing else pruned, and `savePhotos()` writes the union of memory and
+  disk by design (so one document cannot throw away another's records), so the
+  dead record went back to storage at the next photo lookup and stayed there.
+  The same hole opened whenever the pinned row took a new key as the reader
+  moved, and the twelve records `readPhotoStore()` keeps filled up with rows no
+  city could ever read again — after which the live city's record is the one the
+  cap drops, and it is looked up at Commons again on every launch (one wasted
+  request per launch against an API that rate-limits anonymous use). Two
+  storage-only changes close it: `dropTwin()` now calls `prunePhotos()` once the
+  merge is done, so the record goes with the row, and `savePhotos()` drops any
+  key no row owns before it writes, so no path — present or future — can persist
+  a record nothing can read.
+- Measured before and after, in headless Chromium against a mocked forecast,
+  geocoder and Commons: with `lw_places` = [My Location, Mumbai @19.076/72.877]
+  and a photo record for that city, and a mocked fix at 19.0760/72.8777, the
+  1.12.1 page merges the saved row away as intended (one row, key
+  `c19.076,72.878`) and leaves storage holding **both** `c19.076,72.877` (dead)
+  and `c19.076,72.878`; the same run twice reproduces it. This build leaves the
+  live key alone. `node --check` is clean on the page's script, and a headless
+  load reports **zero console errors and zero page errors**.
+- Nothing on screen changes: `#main` is byte-identical to 1.12.1 and the
+  computed styles of the bar, hero, cards, nav, settings panel and sheet match,
+  checked with default settings, with non-default settings and with a saved city
+  in °F (with Reduce motion on, so no entry animation is sampled mid-flight).
+  The rest of the area was re-audited the same way and is unchanged: stored
+  types of the wrong kind, `null` for every key, a negative `lw_cur`, a
+  three-thousand-row `lw_places`, a photo store with a `javascript:` URL and
+  out-of-range settings all boot with no errors, one usable row and the default
+  glass.
+- Version bumped to 1.12.2 (`versionCode 74`), same signing key, so it installs
+  over 1.12.1; `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `e0734f83…`), the APK rebuilt from it bundles that same page and
+  carries `versionCode 74` / `versionName 1.12.2` with v1, v2 and v3 signatures
+  verifying against the project key (`2035d69f…`, `CN=Liquid Weather`), and
+  `CHECKSUMS.txt` and the README carry the new digest (`b386a6a8…`). The APK is
+  still 105 KB, so no size figure moved.
+- Left alone deliberately: `LS.set()` still swallows a quota error (as recorded
+  in 1.6.1 — nothing reachable through the UI comes near the quota, and every
+  way of telling the reader would add wording the UI freeze forbids); a stored
+  list longer than six rows is still capped in memory without being written
+  back; `lw_cur` is still not adopted from another document, because each tab
+  shows the city it is looking at and the stored index is the last one chosen
+  there; and the forecast cache entry belonging to a merged-away row is left in
+  memory for the session — it is memory, not storage, and pruning it here would
+  refetch a city the reader is already looking at under its surviving key.
+
 ### Fixed — time & timezone correctness (2026-11-15, 08:00 IST pass)
 - **A corrupt `utc_offset_seconds` took the whole app down to "Offline".** Every
   time helper in the page reads the city's clock from the payload's own
