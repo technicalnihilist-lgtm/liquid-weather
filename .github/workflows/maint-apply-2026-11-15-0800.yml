@@ -1,0 +1,155 @@
+name: Maint apply 2026-11-15 0800
+
+# One-shot: applies the staged 08:00 pass patch, rebuilds the APK from the
+# resulting tree, republishes it with a fresh CHECKSUMS.txt and README digest,
+# verifies everything and commits the lot to main. Removes itself and the patch
+# in that same commit, so it can only run once.
+
+on:
+  push:
+    paths:
+      - '.github/workflows/maint-apply-2026-11-15-0800.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: maint-apply-2026-11-15-0800
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply the pass patch
+        run: |
+          set -e
+          git apply --whitespace=nowarn .github/maint/2026-11-15-0800.patch \
+            || patch -p1 --fuzz=3 -l -i .github/maint/2026-11-15-0800.patch
+          echo "patch applied"
+          git diff --stat
+          # The applied page must be byte for byte the page that was verified
+          # before this pass was staged. A patch that half-applied or landed in
+          # the wrong place fails here, before anything is built or committed.
+          EXPECTED_PAGE=d511bd2491eef2f019c5955edd32fcdd45ac8a051b8dddc9f5b013b0b6aa2c9b
+          GOT=$(sha256sum web/index.html | cut -d' ' -f1)
+          echo "page $GOT"
+          test "$GOT" = "$EXPECTED_PAGE"
+          grep -q 'time & timezone correctness (2026-11-15, 08:00 IST pass)' CHANGELOG.md
+          grep -q 'android:versionName="1.12.1"' android/AndroidManifest.xml
+          grep -q 'const TZ_MAX = 14 \* 3600;' web/index.html
+          echo "applied tree verified"
+
+      - name: Copy the page into the Android assets
+        run: |
+          set -e
+          cp web/index.html android/assets/index.html
+          cmp web/index.html android/assets/index.html
+          echo "assets copy verified"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android platform and build-tools
+        run: |
+          set -e
+          SDKM=$(command -v sdkmanager || echo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager")
+          yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+          "$SDKM" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Build the signed APK
+        run: |
+          set -e
+          chmod +x android/build.sh
+          ./android/build.sh
+
+      - name: Publish the APK and its digests
+        run: |
+          set -e
+          cp android/build/LiquidWeather.apk LiquidWeather.apk
+          OLD=$(grep -oE '^[0-9a-f]{64}' CHECKSUMS.txt)
+          NEW=$(sha256sum LiquidWeather.apk | cut -d' ' -f1)
+          SIZE=$(stat -c%s LiquidWeather.apk)
+          KB=$(python3 -c "print(round($SIZE/1024))")
+          echo "old digest $OLD"
+          echo "new digest $NEW"
+          echo "size $SIZE bytes, $KB KB"
+          test -n "$OLD"
+          test "$OLD" != "$NEW"
+          sed -i "s/$OLD/$NEW/g" CHECKSUMS.txt README.md
+          # The changelog names the digest in prose too, abbreviated. Keep it
+          # true for the APK this run actually publishes.
+          SHORT=$(echo "$NEW" | cut -c1-8)
+          sed -i "s/ca13bddc\xe2\x80\xa6/${SHORT}\xe2\x80\xa6/g" CHANGELOG.md
+          grep -n "$SHORT" CHANGELOG.md
+          if [ "$KB" != "105" ]; then
+            sed -i "s/105 KB/$KB KB/g" README.md STORE.md
+            echo "size figures moved to $KB KB"
+          else
+            echo "size figures unchanged at 105 KB"
+          fi
+          grep -n "$NEW" CHECKSUMS.txt README.md
+
+      - name: Verify before committing
+        run: |
+          set -e
+          grep -E '^[0-9a-f]{64}  LiquidWeather\.apk$' CHECKSUMS.txt | sha256sum -c -
+          python3 .github/scripts/verify_apk.py .
+          python3 .github/scripts/verify_docs.py .
+          unzip -p LiquidWeather.apk assets/index.html | sha256sum
+          sha256sum web/index.html
+
+      - name: Commit and push
+        run: |
+          set -e
+          git config user.name "Liquid Weather maintenance"
+          git config user.email "maint@liquidweather.local"
+          git rm -q .github/workflows/maint-apply-2026-11-15-0800.yml .github/maint/2026-11-15-0800.patch
+          git add -A
+          git commit -q -F - <<'MSG'
+          fix(time): ignore an out-of-range utc_offset_seconds instead of throwing
+
+          Every time helper in the page derives the city's clock from the payload's
+          own `utc_offset_seconds` applied to the device's UTC clock, and that field
+          was accepted if it was a finite number and nothing else. An out-of-range
+          value reached `new Date(...)` in `cityNow()`, whose `toISOString()` throws
+          a RangeError on an instant it cannot represent. That call is
+          `w.fetchedDate = cityDate(w)`, two lines before the payload is cached, so
+          the throw left `show()` as a link failure: a complete forecast was
+          replaced by the "Offline - check your internet connection" card, nothing
+          was cached, and the card's retry fetched the same payload and failed the
+          same way, for good.
+
+          The offset is now accepted only if it is one a place can have (+/-14:00
+          covers the real -12:00 to +14:00), so a corrupt value is ignored exactly
+          as a missing one always has been and the page falls back to the payload's
+          own clock; the date is also checked for representability before it is
+          converted, so no other route to an unrepresentable instant can throw out
+          of here.
+
+          No visual or behavioural change: with a valid offset the rendered #main,
+          the computed styles of the bar, hero, cards, strip, day rows and pill, and
+          the --k/--glass/--blur/--dp/--pr/--cc variables are identical to 1.12
+          across seven payloads; the midnight, API-lag, spring-forward and
+          cross-timezone scenarios still render as before. Proven by loading the
+          same payload with utc_offset_seconds 1e15 and -1e15: 1.12 draws "Offline"
+          with an empty cache, this build draws and caches the forecast, identical
+          to the same payload with the field removed.
+
+          Version bumped to 1.12.1 (versionCode 73), same signing key; the APK
+          rebuilt from this tree by android/build.sh bundles the same page and its
+          signer digest is checked by that script; CHECKSUMS.txt and the README
+          carry its digest.
+          MSG
+          git log --oneline -1
+          git push origin main
+          git rev-parse HEAD

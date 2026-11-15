@@ -1,0 +1,126 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 3b6d993..cc9ecc6 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -2620,6 +2620,70 @@ one more, found on the day's last pass.
+ 
+ ## [Unreleased]
+ 
++### Fixed — time & timezone correctness (2026-11-15, 08:00 IST pass)
++- **A corrupt `utc_offset_seconds` took the whole app down to "Offline".** Every
++  time helper in the page reads the city's clock from the payload's own
++  `utc_offset_seconds` applied to the device's UTC clock, and that field was
++  taken on trust: it was accepted if it was a finite number and nothing else.
++  An out-of-range value reached `new Date(...)` in `cityNow()`, whose
++  `toISOString()` throws a `RangeError` on an instant it cannot represent —
++  and that call is `w.fetchedDate = cityDate(w)`, two lines *before* the payload
++  is written to the cache. `show()` catches a throw as a *link* failure, so a
++  complete forecast was replaced by the "Offline — check your internet
++  connection" card, the payload was never cached, and the retry card re-fetched
++  the same payload and failed in exactly the same way, for good. The value is
++  now accepted only if it is an offset a place can actually have (±14:00, the
++  real range is −12:00 … +14:00); anything else is ignored exactly as a missing
++  field always has been, so the page falls back to the payload's own clock — the
++  path a payload without `utc_offset_seconds` has always taken — and the date is
++  checked for representability before it is converted, so no other route to an
++  unrepresentable instant can throw out of there either. This is the same class
++  of defect as the missing `uv_index_max` (1.6.1) and the truncated hourly block
++  (1.6.3): a payload field the renderer trusts and `usableForecast()` does not
++  check. Every other field the time path reads was re-audited here and is
++  already guarded.
++- Nothing on screen changes: with a valid offset (every real timezone) the
++  rendered page is byte-identical to 1.12. Verified with `node --check` on the
++  page's script; a headless Chromium load of `web/index.html` with mocked
++  forecast, geocoder and Commons responses reporting **zero console errors and
++  zero page errors**; and the fix proved by loading the same payload twice —
++  with `utc_offset_seconds` 1e15 and −1e15 the 1.12 page draws the "Offline"
++  card with nothing cached, while this build draws the forecast and caches it,
++  and that render is identical to the same payload with the field removed.
++  Seven payloads (IST, −05:00 New York at night, +12:45 Chatham, +14:00, no
++  offset at all, a night thunderstorm, and the default) produce an identical
++  `#main`, identical computed styles for the bar, hero, cards, strip, day rows
++  and pill, and identical `--k/--glass/--blur/--dp/--pr/--cc` against 1.12.
++  The time path itself was re-exercised and is unchanged: a payload fetched at
++  23:50 and read at 00:05 still moves "Today" to the new day and opens the strip
++  on 12 AM, the post-midnight API-lag payload still labels its rows
++  `Sun, Today, Tue…`, a London spring-forward night still reads 1 AM → 3 AM, and
++  the rendered output is identical under device timezones IST, America/New_York
++  and Pacific/Kiritimati for the same city.
++- Version bumped to 1.12.1 (`versionCode 73`), same signing key, so it installs
++  over 1.12; `android/assets/index.html` is byte-identical to `web/index.html`
++  (SHA-256 `d511bd24…`), the APK rebuilt from it bundles that same page and
++  carries `versionCode 73` / `versionName 1.12.1` with v1, v2 and v3 signatures
++  verifying against the project key (`2035d69f…`, `CN=Liquid Weather`), and
++  `CHECKSUMS.txt` and the README carry the new digest (`ca13bddc…`). The APK is
++  still 105 KB, so no size figure moved.
++- Left alone deliberately: (1) the three items the 11 November pass recorded —
++  a DST transition inside the ten-minute cache window, "tonight"/"overnight"
++  wording in the small hours (visible copy, and the UI is frozen), and a payload
++  more than seven days old — were re-checked and are unchanged: the first is at
++  most ten minutes of one hour's error and needs a timezone database the app
++  deliberately does not carry, the second is a wording decision rather than a
++  bug, and the third needs a page left alive and offline for a week. (2) A
++  device clock that is wrong by a few hours *within* the same date still drags
++  the hourly strip to the device's hour, because a clock three hours ahead and a
++  payload three hours stale look identical from inside the page; the day-long
++  disagreement is already distrusted, and the alternative would break the
++  midnight correction that is the reason the city clock is read at all. (3) An
++  hourly or daily block whose `time` entries are not strings at all (`null`)
++  still throws in the label formatters; no API and no truncation produces that
++  — a cut body fails `JSON.parse` first — so it is written down rather than
++  guessed at.
++
+ ### Clean — memory & lifecycle (2026-11-14, 22:00 IST pass)
+ - **Nothing shippable found in the area; the page is unchanged and no fix is
+   carried in this pass.** The lifecycle code path was read end to end and then
+diff --git a/android/AndroidManifest.xml b/android/AndroidManifest.xml
+index b979f22..dcaf10d 100644
+--- a/android/AndroidManifest.xml
++++ b/android/AndroidManifest.xml
+@@ -1,8 +1,8 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+     package="com.liquidweather.app"
+-    android:versionCode="72"
+-    android:versionName="1.12">
++    android:versionCode="73"
++    android:versionName="1.12.1">
+ 
+     <uses-permission android:name="android.permission.INTERNET" />
+     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+diff --git a/web/index.html b/web/index.html
+index 69cde5d..47d1016 100644
+--- a/web/index.html
++++ b/web/index.html
+@@ -1673,11 +1673,29 @@ function hourIndex(w) {
+    crossed midnight is corrected, while a device whose clock is wrong by a day
+    (which would disagree with the payload from the start) is not trusted with
+    the answer, and a fresh payload behaves exactly as before. */
++/* An offset is only a timezone if it is one a place can have: real ones run
++   from -12:00 to +14:00, so anything further than a day from UTC is a corrupt
++   field, not a zone. `utc_offset_seconds` was taken on trust — checked only for
++   being a finite number — so an out-of-range value reached `new Date(...)`,
++   whose `toISOString()` throws a RangeError on a time it cannot represent.
++   That throw lands in the fetch path, at `w.fetchedDate = cityDate(w)` two
++   lines before the payload is cached, so show() caught it as a *link* failure:
++   a complete forecast was replaced by the "Offline — check your internet
++   connection" card, the payload was never cached, and the card's retry fetched
++   the same payload and failed in exactly the same way, for good. An offset no
++   place can have is now ignored exactly like a missing one, so the page falls
++   back to the payload's own clock — the path a payload without the field has
++   always taken — and the date is checked before it is converted as well, so no
++   other route to an unrepresentable instant can throw out of here either. */
++const TZ_MAX = 14 * 3600;                      // the largest offset any place uses (+14:00)
+ function cityNow(w) {
+-  const off = (w && typeof w.utc_offset_seconds === 'number' && isFinite(w.utc_offset_seconds)) ? w.utc_offset_seconds : null;
++  const raw = (w && typeof w.utc_offset_seconds === 'number' && isFinite(w.utc_offset_seconds)) ? w.utc_offset_seconds : null;
++  const off = (raw !== null && Math.abs(raw) <= TZ_MAX) ? raw : null;
+   if (off === null) return '';
+   const t = Date.now() + off * 1000;
+-  return isFinite(t) ? new Date(t).toISOString() : '';
++  if (!isFinite(t)) return '';
++  const d = new Date(t);
++  return isFinite(d.getTime()) ? d.toISOString() : '';
+ }
+ const cityDate = w => cityNow(w).slice(0, 10);
+ 
