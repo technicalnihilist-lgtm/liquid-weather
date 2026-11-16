@@ -2436,9 +2436,30 @@ const fold = s => {
   return v.normalize ? v.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : v;
 };
 const pickPopular = list => list.slice(0, 8).map(c => ({ name: c[0], sub: c[1], lat: c[2], lon: c[3] }));
+/* The short forms a reader types for a country this list carries under its full
+   name, and that no rule below can reach. "uae" is not here — the country is
+   filed under that spelling already, so the prefix rule answers it. */
+const COUNTRY_ALIAS = { uk: 'United Kingdom', gb: 'United Kingdom', usa: 'United States', us: 'United States' };
 function localMatches(q) {
   const s = fold(q.trim());
   if (!s) return [];
+  /* A country's short form is answered by the country it names, before any
+     prefix rule runs. The rule below reads a query as the start of one name or
+     one country, and "uk" is the start of "Ukraine": the only answer the sheet
+     could give for the United Kingdom was Kyiv — Ukraine's capital, under a
+     query that names a country whose three cities sit in this list — and
+     countryMatches() put that same row at the top of the geocoder's answer when
+     there was a connection, so the wrong city came first online too. "usa" and
+     "us" were the other half of the same gap: nothing in the list starts with
+     either, so the United States' twelve cities were unreachable offline. Only
+     forms the list cannot already resolve are in the table, and they are looked
+     up on the whole query, so every other query — "united", "uae", "ukr" — is
+     matched exactly as before. */
+  const alias = COUNTRY_ALIAS[s];
+  if (alias) {
+    const byCountry = pickPopular(POPULAR.filter(c => fold(c[1]) === fold(alias)));
+    if (byCountry.length) return byCountry;
+  }
   const hits = POPULAR.filter(c => {
     const name = fold(c[0]), country = fold(c[1]);
     return name.startsWith(s) || country.startsWith(s) ||
@@ -2722,8 +2743,11 @@ function dedupe(list) {
 }
 
 function countryMatches(term) {
-  const t = fold(term);
-  return POPULAR.filter(c => fold(c[1]).startsWith(t) && fold(c[0]) !== t)
+  const t = fold(term.trim());
+  /* the short form first, or "uk" answers Ukraine (see COUNTRY_ALIAS) */
+  const alias = COUNTRY_ALIAS[t];
+  return POPULAR.filter(c => alias ? fold(c[1]) === fold(alias)
+      : fold(c[1]).startsWith(t) && fold(c[0]) !== t)
     .slice(0, 6).map(c => ({ name: c[0], sub: c[1], lat: c[2], lon: c[3] }));
 }
 

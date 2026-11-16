@@ -2620,6 +2620,67 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — search & geocoding (2026-11-16, 22:00 IST pass)
+- **The query "uk" answered Kyiv — Ukraine's capital — although the United
+  Kingdom's three cities are in the bundled list.** `localMatches()` and
+  `countryMatches()` both read a query as the *start* of a country's name, and
+  "uk" is the start of "Ukraine". Offline, where the bundled list is the only
+  answer a reader can get, that made Kyiv the single result for a query that
+  names a country the list carries: the sheet read `1 result for “uk”` over
+  "Kyiv, Ukraine", and tapping it saved Kyiv and showed its weather. With a
+  connection the same rule put that row at the *top* of the geocoder's answer,
+  so the wrong city came first online as well. "usa" and "us" were the other
+  half of the same gap: nothing in the list starts with either, so the United
+  States' twelve cities were unreachable by the abbreviation everyone types —
+  `No place called “usa”. Try a nearby city, or the country name.`
+- Both matchers now resolve a country's short form before any prefix rule runs,
+  from one small table (`COUNTRY_ALIAS`: `uk`/`gb` → United Kingdom,
+  `usa`/`us` → United States). "uae" is deliberately not in it — the country is
+  filed under that spelling, so the prefix rule already answers it. The lookup
+  is on the whole query, so nothing else moves: "united", "ukr", "uae",
+  "india", "korea", "japan", "mumbai india", "bogota", "turkiye" and every
+  other query return exactly the rows and status line they did before — checked
+  old-against-new on 38 queries, 34 identical and the four aliases fixed.
+- Version bumped to 1.13.6 (`versionCode 82`), same signing key, so it installs
+  over 1.13.5; `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `c79dc92c…`), the APK was rebuilt from this tree with
+  `android/build.sh` (JDK 17, build-tools 34.0.0, platform 34), bundles that
+  same page, carries `versionCode 82` / `versionName 1.13.6`
+  (`.github/scripts/verify_apk.py` agrees on all three), and `CHECKSUMS.txt`
+  carries the new digest (`69523434…`), as does the `sha256sum` block in
+  `README.md` (`verify_docs.py` agrees). The build is still 111 464 bytes
+  (109 KB), so no size figure in the README or the store listing moved.
+  `apksigner verify --print-certs` still reports the project key (`2035d69f…`,
+  `CN=Liquid Weather`).
+
+### Notes
+- No visual change: no markup, CSS, wording, colour, spacing, gradient, glass
+  value or animation timing was touched. The edit adds one lookup table, five
+  lines in `localMatches()` and three in `countryMatches()`; the rows a reader
+  sees for "uk", "gb", "usa" and "us" are now the right country's, and every
+  other query paints exactly what it painted before.
+- Verified: `node --check` on the page's extracted script; headless Chromium
+  loads of `web/index.html` with the forecast, geocoder, Nominatim, BigDataCloud,
+  Commons and image responses mocked reporting **zero console errors and zero
+  page errors**; and the fix proved old-against-new in the same harness — with
+  both geocoders answering 503, "uk" went from `1 result for “uk”`
+  (Kyiv/Ukraine) to London, Manchester and Edinburgh, "gb" from `No place
+  found` to the same three, "usa" and "us" from `No place found` to New York,
+  Los Angeles, Chicago, San Francisco, Seattle and Miami; online the same four
+  queries changed the same way, and the other 34 queries compared (including
+  "united", "uae", "ukr", "india", "korea", "japan", "mumbai india",
+  "İstanbul", "%%", "in", "ab") are identical in rows and status line.
+- Left alone deliberately: (1) **city aliases** — "bangalore", "bombay", "new
+  delhi" and "munchen" still find nothing offline although Bengaluru, Mumbai,
+  Delhi and Munich are in the list; that is a missing answer rather than a
+  wrong one, it needs a city-alias table the bundled list has never had, and the
+  02:00 pass already recorded it as a behaviour decision; (2) **the country
+  prefix rule itself** — "in" still returns Indian cities and "ch" Chinese
+  ones, which is the type-ahead the sheet is meant to do, and narrowing it would
+  change what a half-typed query returns; (3) **a query that names a country
+  alongside a city** ("japan tokyo") is still sent to both geocoders before the
+  bundled list answers, which costs a request but gives the right answer.
+
 ### Fixed — memory & lifecycle (2026-11-16, 20:00 IST pass)
 - **A rain, snow or thunder scene held its whole canvas backing store for as
   long as the app was in the background.** The particle canvas is 860×1800
