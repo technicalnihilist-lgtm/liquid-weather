@@ -694,6 +694,23 @@ let lastKey = '', dirNext = 1, showSeq = 0, fcCtl = null;
 const mono = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
 const aged = (sinceMono, sinceWall, ms) => (mono() - sinceMono >= ms) || (Date.now() - sinceWall >= ms);
 const STALE_MS = 10 * 60 * 1000;
+/* The ten-minute auto refresh is a floor on how often the app goes to the
+   network, and it was measured from one thing only: the last time the *auto
+   refresh itself* ran. Every other download the app makes — the boot fetch, a
+   tap on "Refreshing forecast…" in the Cities sheet, the retry card, picking a
+   city, the pre-fetch a new location starts — left the mark where it was, so
+   the timer fired as if nothing had been downloaded. Measured in headless
+   Chromium with a mocked API: boot downloads once, the reader refreshes at 9:30
+   (second download), and the return-to-foreground check at 10:00 downloads the
+   same payload a third time, a minute after the second, with the data on screen
+   already fresh. The mark is now moved by every forecast the app actually
+   downloads, whichever path made it (markFetched), so "ten minutes" means ten
+   minutes since the last download rather than ten minutes since the last
+   automatic one. Nothing on screen changes: the timer still runs once a minute,
+   still does nothing while the page is hidden, and still refuses to go back to
+   the network until the window has passed. */
+let lastAuto = mono(), lastAutoWall = Date.now();
+const markFetched = () => { lastAuto = mono(); lastAutoWall = Date.now(); };
 
 const savePlaces = () => { LS.set('lw_places', places); LS.set('lw_cur', cur); };
 /* Two documents share one saved list — the app and a browser tab, or two tabs.
@@ -1310,6 +1327,7 @@ function prefetchForecast(p, ctl) {
   return loadWeather(p, ctl ? ctl.signal : null).then(w => {
     w.at = mono(); w.atWall = Date.now(); w.fetchedDate = cityDate(w);
     cache[key] = w;
+    markFetched();                           // this download counts as a refresh too
     delete preFail[key];
     pruneCache();                            // a row that went away while this was out owns nothing
     return true;
@@ -1653,6 +1671,11 @@ async function show(force) {
       w = await loadWeather(p, ctl.signal);
       w.at = mono(); w.atWall = Date.now(); w.fetchedDate = cityDate(w);
       cache[key] = w;
+      /* A download just happened, so the ten-minute window starts here rather
+         than at the last automatic refresh: without this a refresh the reader
+         made by hand was followed by another full download of the same payload
+         as soon as the timer came round (see `lastAuto`). */
+      markFetched();
       /* The key is taken before the await, and the row it belongs to can stop
          existing while the request is out — a fix arriving for the pinned row
          re-keys it, the reader deletes a city, a picked city replaces the
@@ -3208,11 +3231,13 @@ startFx();
 })();
 
 /* refresh when the tab comes back, and every 10 minutes */
-let lastAuto = mono(), lastAutoWall = Date.now();
 function autoRefresh() {
   if (document.visibilityState !== 'visible') return;
   if (!aged(lastAuto, lastAutoWall, STALE_MS)) return;
-  lastAuto = mono(); lastAutoWall = Date.now();
+  /* Marked before the attempt, not after it: one try per window whether it
+     succeeds or not, exactly as before — a link that is down must not turn the
+     sixty-second tick into a sixty-second retry loop. */
+  markFetched();
   const p = places[cur];
   if (hasFix(p)) show(true);
 }

@@ -2620,6 +2620,65 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — memory & lifecycle (2026-11-16, 10:00 IST pass)
+- **The ten-minute auto refresh only counted its own downloads, so a refresh the
+  reader had just made was followed by a second, identical one.** `autoRefresh()`
+  is the app's floor on how often it goes to the network — it fires on a return
+  to the foreground and on a sixty-second tick, and does nothing until ten
+  minutes have passed. That window was measured from `lastAuto`, which only
+  `autoRefresh()` itself ever moved: the boot fetch, a tap on *Refreshing
+  forecast…* in the Cities sheet, the offline card's retry, picking another city
+  and the pre-fetch a new location starts all left the mark where it was, so the
+  timer fired as if nothing had been downloaded. Measured in headless Chromium
+  with a mocked API: boot downloads once, the reader refreshes at 9:30 (second
+  download), and the return-to-foreground check at 10:00 downloads the same
+  payload a third time — one minute after the second, with the data on screen
+  already fresh, on a link that may be the slow or metered one that made the
+  reader refresh by hand. The same thing happens to a successful retry from the
+  offline card and to a city picked from the sheet.
+- Every forecast the app actually downloads now moves the mark
+  (`markFetched()`), so "ten minutes" means ten minutes since the last download
+  rather than ten minutes since the last automatic one. The two paths that
+  download are `show()`'s fetch and `prefetchForecast()`; `autoRefresh()` keeps
+  marking before its own attempt rather than after it, so a link that is down
+  still gets exactly one try per window and not one per tick. The declaration
+  moved above `boot()` because `show()` now writes it during the boot fetch.
+- Nothing visible changed: the timer still runs once a minute, still returns
+  immediately while the page is hidden, and still refuses the network until the
+  window has passed — only the mark it reads moved. Verified old against new in
+  headless Chromium: boot, a manual refresh, then a foreground return — 3
+  forecast downloads on 1.13.2, 2 on this build; and with no manual refresh,
+  boot then a foreground return ten minutes later — 2 downloads on both, so a
+  genuinely stale screen still refreshes.
+- Verified: `node --check` clean on the extracted script; a headless Chromium
+  load of `web/index.html` with the forecast, geocoder, Commons and image
+  responses mocked reporting **zero console errors and zero page errors**; and
+  `#main`'s markup, the document's node count, the `#fx` backing store
+  (860×1800 at DPR 2), `--k/--glass/--blur/--dp/--pr/--cc/--spring` and the
+  computed styles of the bar, hero, temperature, cards, hourly strip, day row,
+  grid card, nav, pill, canvas and phone identical to 1.13.2 (`#sun`'s
+  transform differs only by the phase of its own pulse).
+- `versionCode 79` / `versionName 1.13.3` in `android/AndroidManifest.xml` (up
+  from 78 / 1.13.2), same signing key, so it installs over 1.13.2.
+  `android/assets/index.html` is byte-identical to `web/index.html` (SHA-256
+  `c05b27f6…`); the APK was rebuilt from this tree with `android/build.sh`
+  (JDK 17, build-tools 34.0.0, platform 34), bundles that page byte for byte,
+  carries `versionCode 79` / `versionName 1.13.3`, and `apksigner verify`
+  reports *Verifies* (v1/v2/v3) with the project key (`2035d69f…`,
+  `CN=Liquid Weather`). `CHECKSUMS.txt` and the README's digest block carry the
+  new digest `fcaa68ba…` (109 KB, up from 105 KB).
+- Left alone deliberately: (1) the five items the 14 November clean pass and the
+  00:00 pass recorded are unchanged and still not worth a change — the `#fx`
+  store held while the page is hidden, the sixty-second tick that returns
+  immediately, the `deviceorientation` subscription kept while the parallax is
+  halted, one `Image` per render of an already-decoded photo, and the untracked
+  `setTimeout(size, 250)` on rotation; (2) a manual refresh still repaints
+  `#main` rather than patching it, which is the render path's business, not
+  this one; (3) `fcCtl`, `prefCtl`, `nameCtl` and `searchCtl` are still left
+  pointing at settled controllers after their request finishes — aborting a
+  finished controller is a no-op, and nulling them would change nothing a
+  reader or the network can observe.
+
 ### Fixed — search & geocoding (2026-11-16, 02:00 IST pass)
 - **Re-opening the search sheet did not stop the search that was already under
   way, so the sheet came back showing results for a query that was no longer in
