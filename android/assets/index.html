@@ -2573,7 +2573,7 @@ function row(o) {
   return `<div class="sh-i" data-lat="${o.lat}" data-lon="${o.lon}" data-name="${esc(o.name)}" data-sub="${esc(o.sub || '')}">
     <button class="tap" aria-label="${esc(name)}">
     <span class="ic" aria-hidden="true">${isSaved ? '📍' : '🔎'}</span>
-    <span style="min-width:0"><b>${esc(o.name)}</b><small>${esc(o.sub || '')}</small></span></button>${right}</div>`;
+    <span style="min-width:0"><b>${esc(o.name)}</b> <small>${esc(o.sub || '')}</small></span></button>${right}</div>`;
 }
 
 let lastResults = [];      // last painted results, reused when the sheet is repainted (after a removal)
@@ -2625,7 +2625,7 @@ function paintSheet(q, results) {
       `<div class="sh-i">
         <button class="tap" aria-label="${esc(p.name + (p.sub ? ', ' + p.sub : ''))}" data-go="${places.indexOf(p)}">
         <span class="ic" aria-hidden="true">🏙️</span>
-        <span style="min-width:0"><b>${esc(p.name)}</b><small>${esc(p.sub || '')}</small></span></button>
+        <span style="min-width:0"><b>${esc(p.name)}</b> <small>${esc(p.sub || '')}</small></span></button>
         <button class="rm" data-rm2="${places.indexOf(p)}" aria-label="Remove ${esc(p.name)}">✕</button></div>`).join('');
   }
   if (q.trim()) {

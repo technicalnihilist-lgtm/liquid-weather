@@ -2620,6 +2620,77 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — accessibility & semantics (2026-11-17, 02:00 IST pass)
+- **Every row of the city list failed WCAG 2.5.3 (Label in Name).** A row's
+  spoken name is stated on the button — `aria-label="Mumbai, India"` — while the
+  two pieces of text the row paints, `<b>Mumbai</b>` and `<small>India</small>`,
+  sat in the markup with nothing between them. Both are `display:block`, so the
+  browser drew them on separate lines and a reader saw "Mumbai / India"; text
+  extraction, however, concatenated the two adjacent text nodes into one word,
+  **"MumbaiIndia"**, and an accessible name of "Mumbai, India" does not contain
+  that word. Axe reports it as `label-content-name-mismatch` (serious) on
+  **nine rows at once** — the eight *Popular* rows plus the pinned saved row —
+  in the sheet's default state, on the two rows of a live result, and on every
+  saved row of the *Saved places* group; it was the only violation axe found on
+  the page in any state (the forecast screen, the settings panel and the offline
+  screen are clean).
+- The defect is the missing separator, so the separator is the fix: a single
+  space between `</b>` and `<small>` in the two templates that paint a row
+  (`row()`, used for *Popular* and for results, and the *Saved places* group in
+  `paintSheet()`). The visible text is now "Mumbai India", the spoken name
+  "Mumbai, India" contains it, and the rule passes on all four row states —
+  popular list, live results, saved places, and the repaint after a removal.
+- Nothing moves: `b` and `small` are both `display:block`, so the whitespace
+  between them collapses into the anonymous block that sits between two block
+  boxes and paints nothing. Measured on both builds with the sheet open and a
+  saved city present: the position, size, font size and display of all **61**
+  elements of `#shList` are identical, and a screenshot of `#sheet` (with the
+  randomly-seeded `#fx`, `#clouds`, `#photo` and `#orbLayer` layers hidden) is
+  byte-identical between the two files.
+- Version bumped to 1.14.1 (`versionCode 84`), same signing key, so it installs
+  over 1.14; `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `57fddac0…`), the APK was rebuilt from this tree with
+  `android/build.sh` (JDK 17, build-tools 34.0.0, platform 34), bundles that
+  same page, carries `versionCode 84` / `versionName 1.14.1`
+  (`.github/scripts/verify_apk.py` agrees on all three), and `CHECKSUMS.txt`
+  carries the new digest (`46bd46fd…`), as does the `sha256sum` block in
+  `README.md` (`verify_docs.py` agrees). The build is still 111 464 bytes
+  (109 KB), so no size figure in the README or the store listing moved.
+  `apksigner verify --print-certs` still reports the project key (`2035d69f…`,
+  `CN=Liquid Weather`).
+
+### Notes
+- No visual change: the edit is two spaces in two template literals; no markup
+  element, class, CSS rule, colour, spacing, gradient, glass value, wording or
+  animation timing was touched, and the two measurements above (61 identical
+  boxes, byte-identical sheet screenshot) say so rather than the diff alone.
+- Verified: `node --check` on the page's extracted script (174 913 bytes); a
+  headless Chromium load of `web/index.html` with the forecast, geocoder,
+  Nominatim, BigDataCloud, Commons and image responses mocked reports **zero
+  console errors and zero page errors**, and axe-core run over the whole page in
+  the forecast state and with the sheet open reports **zero violations**; and
+  the fix proved old-against-new in the same harness, where the nine-row
+  `label-content-name-mismatch` violation on 1.14 disappears on this build while
+  the boxes and the pixels do not move.
+- Left alone deliberately: (1) **the `✕`, `↻` and pin-only controls still carry
+  symbol-only visible text** — `aria-label="Close search"` over "✕",
+  `"Refresh forecast"` over "↻" — which axe reports as *incomplete* rather than
+  a violation because a symbol yields no words to compare; giving them a spoken
+  name that contains the glyph would make the app read out a symbol for no gain
+  to a voice user, and the names they have are the ones a person says; (2) **the
+  7-day rows still announce "Today 21° 31°"** with no low/high words and the
+  range bar still carries no accessible value (unchanged from the 11 November
+  passes: both need a clipped-out text node per cell, a DOM change nobody has
+  proved paint-free); (3) **text contrast over the scenes** is unchanged — the
+  top bar's city name still falls to 2.97:1 on the fog scene, and every route to
+  raising it (a text shadow, a darker glass under the bar) is a visible change;
+  (4) **the `:focus-visible` ring is `#fff` with no dark edge**, so on the
+  brightest part of a clear-sky scene the ring itself is low-contrast — a ring
+  colour is a visible change, so it is written down, not shipped; (5) **the
+  cards' `.lbl` labels are not headings**, so a screen reader cannot jump
+  between *Hourly forecast*, *7-day forecast* and the metric cards — that is a
+  navigation improvement rather than a defect, and this pass ships fixes only.
+
 ### Clean — storage robustness (2026-11-17, 00:00 IST pass)
 - **Nothing shippable found in the area; the page is unchanged, no version was
   bumped and the published APK is untouched.** This is the rotation's second
