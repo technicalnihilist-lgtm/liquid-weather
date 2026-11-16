@@ -71,6 +71,18 @@ STORE = "STORE.md"
 README_RELEASE = re.compile(r"\*\*Latest APK:\*\*[^\n]*?\bv(\d+(?:\.\d+)*)")
 STORE_RELEASE = re.compile(r"matches the current\s+release,\s*`v(\d+(?:\.\d+)*)`")
 
+# The size figure is the fifth copy of a release value, and the second one that
+# drifted exactly the way the version label did. Both documents state how big
+# the download is — the README in its install step, STORE.md in its fields and
+# twice in the copy a store publishes — and nothing read any of them. The
+# 1.13.3 build grew from 105 KB to 109 KB; the README's figure moved with its
+# digest, STORE.md's three did not, so the listing told a reviewer the file was
+# 4 KB smaller than the one this repository publishes. Every `N KB` figure in
+# these two documents describes the APK, so each is compared with the committed
+# file, and STORE.md must keep the field a store is filled in from.
+SIZE = re.compile(r"\b(\d{2,4})\s*KB\b")
+STORE_SIZE_FIELD = re.compile(r"\|\s*\*\*APK size\*\*\s*\|\s*(\d{2,4})\s*KB\s*\|")
+
 
 def sha256(path):
     h = hashlib.sha256()
@@ -166,7 +178,25 @@ def main(argv):
             % (STORE, store_release, README, readme_release)
         )
 
+    apk_bytes = os.path.getsize(apk_path)
+    apk_kb = (apk_bytes + 512) // 1024
+    if not STORE_SIZE_FIELD.search(store):
+        failures.append(
+            "%s no longer carries an '**APK size** | N KB' field.\n"
+            "       That field is what a store listing is filled in from; restore it." % STORE
+        )
+    for doc, text in ((README, readme), (STORE, store)):
+        stated = sorted({int(n) for n in SIZE.findall(text)})
+        wrong = [n for n in stated if n != apk_kb]
+        if wrong:
+            failures.append(
+                "%s states the APK as %s KB but the committed %s is %d KB (%d bytes).\n"
+                "       Every size figure in the document has to move with the build.\n"
+                % (doc, "/".join(str(n) for n in wrong), APK, apk_kb, apk_bytes)
+            )
+
     print("APK       : %s" % apk_digest)
+    print("APK size  : %d KB (%d bytes)" % (apk_kb, apk_bytes))
     print("CHECKSUMS : %s" % (checksums_digest or "none"))
     print("README    : %s" % (readme_digest or "none"))
     print("README v  : %s" % (readme_release or "none"))

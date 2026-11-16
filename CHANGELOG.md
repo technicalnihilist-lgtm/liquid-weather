@@ -2620,6 +2620,52 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — build & release hygiene (2026-11-16, 14:00 IST pass)
+- **The store listing still quoted the APK as 105 KB after the build grew to
+  109 KB.** `STORE.md` states the download's size three times — the *APK size*
+  field a store console is filled in from, the short description and the
+  "Small on purpose" paragraph — and all three said 105 KB while the committed
+  `LiquidWeather.apk` is 111 464 bytes (109 KB). The figure last moved on
+  14 November, when the 1.11 listing was corrected from 101 KB; the 1.13.3
+  build grew the APK past it again, the README's install line was updated with
+  the new digest and these three were not. Nothing read them: `verify_docs.py`
+  guarded the README's digest and compared the two release labels, and
+  `CHECKSUMS.txt` describes the file, never its size — so the copy a reviewer
+  reads described a download 4 KB smaller than the one published. All three now
+  say 109 KB.
+- **Every size figure in the two documents is now checked against the committed
+  APK.** `verify_docs.py` computes the file's size in KB and fails when any
+  `N KB` figure in `README.md` or `STORE.md` disagrees with it, and when
+  `STORE.md` loses its *APK size* field, so the number cannot drift away from
+  the build again — the same failure mode the version labels had on
+  14 November, which is why those are compared too.
+- Verified: `python3 -m py_compile` and `python3 .github/scripts/verify_docs.py .`
+  green (it now prints `APK size : 109 KB (111464 bytes)`); the guard proven to
+  bite by putting one figure back to 105 KB, which fails the run with
+  `STORE.md states the APK as 105 KB but the committed LiquidWeather.apk is
+  109 KB (111464 bytes)` and passes again once restored;
+  `verify_apk.py`, `verify_docs.py` and `sha256sum -c` on the committed APK all
+  green; `node --check` on the page's script clean and a headless Chromium load
+  of `web/index.html` with the forecast, geocoder, BigDataCloud, Nominatim and
+  Commons responses mocked reporting **zero console errors and zero page
+  errors** (117 nodes rendered).
+- `web/index.html` is untouched by this pass and is byte-identical to 1.13.3
+  (SHA-256 `c05b27f6…`), as is `android/assets/index.html`, so no rebuild was
+  needed: the APK, `CHECKSUMS.txt` and the manifest stay at `versionCode 79` /
+  `versionName 1.13.3`, and `verify_apk.py` confirms the published APK still
+  matches the source and the manifest.
+- Left alone deliberately: (1) nothing in CI verifies the *signature* of the
+  committed APK — `build.sh` checks the certificate of the build it makes and
+  `CHECKSUMS.txt` tells a reader how to check by hand, but an APK signed with a
+  different key and carrying the right version and page would pass all three
+  guards; adding that needs `apksigner` from the workflow's SDK step and could
+  not be exercised in this environment, so it is recorded rather than shipped;
+  (2) `build.sh` hardcodes the expected signer digest that `CHECKSUMS.txt` also
+  names — the signing key never changes under the programme's rules, so the
+  duplicate cannot disagree in practice; (3) the changelog's own headings are
+  not in release order (1.9.1 above 1.9, 1.11.2 above 1.11.1, 1.13 above
+  1.12) — re-sorting 2 500 lines is a rewrite of published notes, not a fix.
+
 ### Fixed — memory & lifecycle (2026-11-16, 10:00 IST pass)
 - **The ten-minute auto refresh only counted its own downloads, so a refresh the
   reader had just made was followed by a second, identical one.** `autoRefresh()`
