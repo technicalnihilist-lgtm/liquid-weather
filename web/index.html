@@ -2789,7 +2789,15 @@ function addPlace(o) {
   const existing = places.findIndex(p => samePlace(p, o));
   if (existing >= 0) { cur = existing; }
   else {
-    const myLocEmpty = places.length === 1 && places[0].myLoc && !places[0].lat;
+    /* `!places[0].lat` is the falsy-zero mistake hasFix() exists for (see it):
+       a fix on the equator read as "no fix yet", so the pinned row holding a
+       located place at 0.000° was taken for the empty placeholder and
+       *replaced* by the city picked here — "My Location" vanished from the
+       list, myLoc went with it, and the app never asked for a position again.
+       hasFix() answers the question this test actually asks, so a located row
+       on the equator is kept and the picked city is added beside it, exactly
+       as a located row at any other latitude already was. */
+    const myLocEmpty = places.length === 1 && places[0].myLoc && !hasFix(places[0]);
     if (myLocEmpty) {
       places[0] = { id, name: o.name, sub: o.sub, lat: o.lat, lon: o.lon };
       cur = 0;

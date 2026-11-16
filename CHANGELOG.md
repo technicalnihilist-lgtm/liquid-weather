@@ -2620,6 +2620,66 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — geolocation edge cases (2026-11-16, 16:00 IST pass)
+- **A located row on the equator was read as "no location yet" and silently
+  replaced by the next city the reader picked.** `addPlace()` decides whether
+  the list is still just the empty "My Location" placeholder — the one case
+  where the first city picked takes that row over instead of spending one of the
+  five saved slots — with `!places[0].lat`. Latitude 0 is a real coordinate but
+  a falsy number, so a fix at 0.000° looked like a row with no fix at all:
+  picking any city from the sheet overwrote the pinned row, "My Location" and
+  its `myLoc` flag disappeared from the list, the located place's coordinates,
+  name and forecast went with it, and every later launch saw a list with no
+  pinned row — the app never asked for a position again. `hasFix()` is the test
+  the rest of the app uses for exactly this question (and the one that already
+  fixed the same falsy-zero mistake in the "Locating…" skeleton), so the
+  condition now asks it: a located row on the equator is kept and the picked
+  city is added beside it, exactly as a located row at any other latitude
+  already was. The empty placeholder is unchanged — with no fix in it, the first
+  city picked still takes the row over rather than costing a saved slot.
+- Version bumped to 1.13.4 (`versionCode 80`), same signing key, so it installs
+  over 1.13.3; `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `d45453a9…`), the APK was rebuilt from it with `android/build.sh`
+  (JDK 17 + build-tools 34.0.0 + platform 34), bundles that same page, carries
+  `versionCode 80` / `versionName 1.13.4` (`.github/scripts/verify_apk.py`
+  agrees on all three), and `CHECKSUMS.txt` carries the new digest
+  (`853923e5…`), as does the `sha256sum` block in `README.md`
+  (`verify_docs.py` agrees). The build is still 111 464 bytes (109 KB), so no
+  size figure in the README or the store listing moved.
+  `apksigner verify --print-certs` still reports the project key (`2035d69f…`,
+  `CN=Liquid Weather`).
+
+### Notes
+- No visual change: the edit is one condition inside `addPlace()` and the
+  comment beside it; no markup, CSS, wording, colours, spacing, gradients, glass
+  values or animation timings were touched, and nothing on screen differs for
+  any list whose located row is not on the equator.
+- Verified: `node --check` on the page's script; a headless Chromium load of
+  `web/index.html` with the forecast, geocoder, BigDataCloud, Nominatim and
+  position responses mocked reporting **zero console errors and zero page
+  errors** in eight states (fast fix, denial, both geocoders 500, no position
+  ever delivered, a fix at 18s with the prompt still pending, two taps of "Use
+  my current location", a 4s geocoder, no Permissions API); and the fix proved
+  old-against-new with the same mocks — a fix at 0.000°, 73.500° and Malé picked
+  from the sheet leaves 1.13.3 with **one** row (Malé, `myLoc:false`, the
+  located place gone) and 1.13.4 with **two** (the located row at 0.000°,
+  `myLoc:true`, and Malé), while the control at 0.500° gives identical rows in
+  both builds and a control with an empty pinned row still replaces it with the
+  picked city in both.
+- Left alone deliberately: (1) **the position request still allows a ten-minute
+  old fix** (`maximumAge`), so "Use my current location" in a city the reader
+  has just left can name the one they left; shortening it makes a cold first fix
+  slower or impossible on devices with no fast provider, which is a behaviour
+  decision rather than a bug fix. (2) **A pinned row's coordinates are still
+  never refreshed** after the first fix — the ten-minute auto-refresh re-fetches
+  the forecast, not the position (recorded in 1.8.7 and 1.9.2). (3) **A fix at
+  0,0 is still accepted as a fix**: 0 is a real coordinate by the app's own
+  rule, and rejecting it would change which positions are believed. (4) **The
+  search sheet still lists a saved city twice when it is also in the bundled
+  Popular list** (save Pune, open the sheet: once under *Saved places*, once
+  under *Popular*) — that is search-sheet behaviour, the rotation's area 8, and
+  it is recorded here for that pass rather than changed in this one.
+
 ### Fixed — build & release hygiene (2026-11-16, 14:00 IST pass)
 - **The store listing still quoted the APK as 105 KB after the build grew to
   109 KB.** `STORE.md` states the download's size three times — the *APK size*
