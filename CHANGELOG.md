@@ -2620,6 +2620,71 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — memory & lifecycle (2026-11-16, 20:00 IST pass)
+- **A rain, snow or thunder scene held its whole canvas backing store for as
+  long as the app was in the background.** The particle canvas is 860×1800
+  pixels at DPR 2 — 6 192 000 bytes of WebView memory, plus the compositor
+  texture for a layer that carries `will-change: transform` — and the store is
+  deliberately handed back whenever there is nothing to draw: a clear or cloudy
+  scene seeds no particles, and Reduce motion paints nothing at all. A page
+  nobody is looking at is the same case, and the largest one: the
+  `visibilitychange` handler stopped the frame loop and the lightning chain but
+  left the pixels where they were, so a phone that spent the day on its last
+  rainy city kept 6.2 MB of them for the whole time the app was away — which,
+  for a weather app, is most of its life. The handler now releases the store
+  with the frames, and `size()` no longer takes it back on a resize that arrives
+  while the app is in the background (a rotation, the keyboard, another app
+  taking the screen used to reallocate the whole store for a picture that could
+  not be drawn). `startFx()` already takes the store again on return, from the
+  same W/H/DPR and the same particle positions, so the field the reader comes
+  back to is the field they left — measured in headless Chromium, the store goes
+  from 860×1800 (6 192 000 bytes) to 0×0 while hidden, a resize during that time
+  leaves it released at the new measurement (800×1760 on return, 5 632 000
+  bytes), and the drops are painted again in the first frame after the return.
+- Version bumped to 1.13.5 (`versionCode 81`), same signing key, so it installs
+  over 1.13.4; `android/assets/index.html` is byte-identical to `web/index.html`
+  (SHA-256 `1960e32d…`), the APK was rebuilt from it with `android/build.sh`
+  (JDK 17 + build-tools 34.0.0 + platform 34), bundles that same page, carries
+  `versionCode 81` / `versionName 1.13.5` (`.github/scripts/verify_apk.py`
+  agrees on all three), and `CHECKSUMS.txt` carries the new digest
+  (`28c3df13…`), as does the `sha256sum` block in `README.md`
+  (`verify_docs.py` agrees). The build is still 111 464 bytes (109 KB), so no
+  size figure in the README or the store listing moved.
+  `apksigner verify --print-certs` still reports the project key (`2035d69f…`,
+  `CN=Liquid Weather`).
+
+### Notes
+- No visual change: two statements were added — one call inside the existing
+  `visibilitychange` handler, one condition inside `size()` — and the rest of
+  each hunk is the comment explaining them. No markup, CSS, wording, colours,
+  spacing, gradients, glass values, animation timings or particle counts were
+  touched, and nothing on screen differs while the page is visible.
+- Verified: `node --check` on the page's script; a headless Chromium load of
+  `web/index.html` with the forecast, geocoder, BigDataCloud, Nominatim, Commons
+  and image responses mocked reporting **zero console errors and zero page
+  errors**; and the fix proved against the same page with the lifecycle
+  exercised — the canvas attribute is `0×0` after the document is marked hidden
+  (it was `860×1800`, 6 192 000 bytes, before), no animation frame runs while it
+  is hidden, a viewport resize during that time leaves it released and records
+  the new measurement, and on return it is `800×1760` with the loop running
+  again and the drops repainted (2 531 → 2 796 non-transparent pixels in the
+  sampled band). A second hide/show cycle repeats the same numbers.
+- Left alone deliberately: (1) **the 60-second `autoRefresh` interval keeps
+  ticking while the page is hidden** — it returns immediately on
+  `visibilityState !== 'visible'`, so the cost is one timer wake a minute, and
+  clearing it would mean re-arming it on return for no measurable gain. (2) **The
+  nine cloud layers and the sun keep their compositor animations while the app
+  is away**, because that is what `WebView.onPause()` is for and the shell
+  already calls it — pausing them from the page as well would duplicate a
+  platform signal and change the scene's animation state on return. (3) **A
+  lookup whose city was deleted still finishes its download** — the Commons
+  image request is an `Image`, which cannot be aborted, and the record is
+  discarded on arrival by the `photoSeq`/`photoKey` guards; cancelling it would
+  need a different transport for no visible gain. (4) **`preFail` keeps one
+  entry per city the device has been located in for the session** — a handful of
+  small objects, bounded by the six rows the app allows, and pruning it on every
+  write costs more than it frees.
+
 ### Fixed — geolocation edge cases (2026-11-16, 16:00 IST pass)
 - **A located row on the equator was read as "no location yet" and silently
   replaced by the next city the reader picked.** `addPlace()` decides whether

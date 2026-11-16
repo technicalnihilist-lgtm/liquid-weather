@@ -871,8 +871,14 @@ function size() {
   if (w === W && h === H && dpr === DPR
       && (released ? !cv.width : cv.width === bw && cv.height === bh)) return;
   DPR = dpr; W = w; H = h;
-  /* A released canvas is left released: there is nothing to size it for. */
-  if (P.length && !still) fitCanvas(); else releaseCanvas();
+  /* A released canvas is left released: there is nothing to size it for, and
+     neither is one on a page nobody is looking at (see `releaseCanvas`): a
+     resize that arrives while the app is in the background — a rotation, a
+     keyboard, another app taking the screen — would otherwise take the whole
+     backing store back for a picture that cannot be drawn until the reader
+     returns. The measurement above is still recorded, so startFx() sizes the
+     store from the new W/H/DPR the moment the page is visible again. */
+  if (P.length && !still && !pageHidden()) fitCanvas(); else releaseCanvas();
   seed();
 }
 /* `size()` is only ever run from a resize or a rotation, and a device pixel
@@ -1050,6 +1056,18 @@ document.addEventListener('visibilitychange', () => {
   if (pageHidden()) {
     if (fxRaf) { cancelAnimationFrame(fxRaf); fxRaf = 0; }
     clearTimeout(lt);
+    /* The frames stop here, but the pixels they were drawn into stayed: a rain
+       or snow scene kept its whole backing store for as long as the app was
+       away — 860×1800 at DPR 2 is 6 192 000 bytes of WebView memory, plus the
+       compositor texture for a layer that carries `will-change: transform` —
+       and a weather app spends most of its life in the background. The store
+       is already handed back whenever there is nothing to draw (a clear sky,
+       Reduce motion); a page nobody is looking at is the same case, and the
+       largest one. startFx() takes it again on return, from the same W/H/DPR
+       and the same particle positions, so the field is the one the reader
+       left — nothing on screen changes, and the first frame after the return
+       draws the same drops in the same places. */
+    releaseCanvas();
   } else {
     startFx();
     lightning();
