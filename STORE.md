@@ -2,7 +2,7 @@
 
 Copy-paste values for app stores that read a project from GitHub (Orion, F-Droid
 submissions, Play Store console, etc.). Everything here matches the current
-release, `v1.13`.
+release, `v1.14`.
 
 ## Fields
 

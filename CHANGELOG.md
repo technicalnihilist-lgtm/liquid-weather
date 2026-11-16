@@ -4485,6 +4485,75 @@ one more, found on the day's last pass.
 Ideas that would be welcome: a language switch, sleet/haze scenes,
 a home-screen widget, and a "feels like" curve on the hourly strip.
 
+## [1.14] — 2026-11-16
+
+The day's release, cut from the 22:00 IST pass. It publishes everything the
+programme fixed on 16 November — the 00:00, 02:00, 10:00, 14:00, 16:00, 20:00
+and 22:00 passes — as one version, and rebuilds the APK so the published app is
+the app in the repository.
+
+### Fixed (carried in this release)
+- **The query "uk" answered Kyiv — Ukraine's capital — although the United
+  Kingdom's three cities are in the bundled list** (22:00 pass, search &
+  geocoding): both matchers read a query as the start of a country's name, and
+  "uk" is the start of "Ukraine", so the sheet's only answer offline was Kyiv
+  and its first row online was Kyiv too; "usa" and "us" answered nothing at
+  all. A country's short form is now resolved before any prefix rule runs. See
+  the "search & geocoding" entry above.
+- **A rain, snow or thunder scene held its whole canvas backing store while the
+  app was in the background** (20:00 pass, memory & lifecycle): 6.2 MB of
+  WebView memory plus its compositor texture, for a page nobody was looking at.
+  The `visibilitychange` handler now releases the store with the frames, and a
+  resize that arrives while hidden no longer reallocates it.
+- **A located row on the equator was read as "no location yet" and silently
+  replaced by the next city the reader picked** (16:00 pass, geolocation edge
+  cases): `addPlace()` decided with `!places[0].lat`, and latitude 0 is a real
+  coordinate but a falsy number, so the pinned row and its `myLoc` flag were
+  overwritten and the app never asked for a position again. `hasFix()` decides
+  it now.
+- **The store listing still quoted the APK as 105 KB after the build grew to
+  109 KB, and nothing read any of the five hand-written size figures** (14:00
+  pass, build & release hygiene): every `N KB` figure in `README.md` and
+  `STORE.md` is now compared with the committed APK by `verify_docs.py`.
+- **The ten-minute auto refresh only counted its own downloads, so a refresh the
+  reader had just made was followed by a second, identical one** (10:00 pass,
+  memory & lifecycle): every forecast actually downloaded now moves the mark.
+- **Re-opening the search sheet did not stop the search already under way**
+  (02:00 pass, search & geocoding): the sheet came back showing results for a
+  query no longer in its box, and the request ran on to both geocoders' 9 s
+  deadlines. `openSheet()` now clears the debounce and aborts the request, as
+  `closeSheet()` always has.
+- **A device pixel ratio that changed while the canvas box did not left the
+  particle field drawing at the wrong scale** (00:00 pass, memory & lifecycle):
+  `size()` runs only on `resize`/`orientationchange`, so a display-scale change
+  kept the store at the ratio it was built with. A `(resolution: <dpr>dppx)`
+  watcher re-runs `size()` when the ratio moves.
+
+### Notes
+- `versionCode 83` / `versionName 1.14` in `android/AndroidManifest.xml` (up
+  from 82 / 1.13.6), same signing key, so it installs over every 1.13 build.
+- `web/index.html` is the page this day's fixes produced and is byte-identical
+  to `android/assets/index.html` (SHA-256 `c79dc92c…`); the 22:00 pass is the
+  only one after 1.13.6, and its change is in it.
+- The APK was rebuilt from this tree with `android/build.sh` (JDK 17,
+  build-tools 34.0.0, platform 34). It bundles `assets/index.html`
+  byte-identical to `web/index.html`, carries `versionCode 83` /
+  `versionName 1.14`, and `.github/scripts/verify_apk.py` agrees on all three.
+  `CHECKSUMS.txt` carries the new digest,
+  `d73eacdf8235f5e943f93a4988d9b8c6081d6e8cc5630b73d3e4775222942c43`, and so
+  does the `sha256sum` block in `README.md` (checked by `verify_docs.py`), which
+  now also names v1.14, as does `STORE.md`; `apksigner verify --print-certs`
+  reports the project key (`2035d69f…`, `CN=Liquid Weather`).
+- The APK is still 111 464 bytes (109 KB), so no size figure in `README.md` or
+  `STORE.md` moved.
+- Verified: `node --check` on the page's script; headless Chromium loads of
+  `web/index.html` with mocked forecast, geocoder, Nominatim, BigDataCloud,
+  Commons and image responses reporting **zero console errors and zero page
+  errors**; the per-pass checks recorded in each entry above; `python3
+  .github/scripts/verify_apk.py .`, `python3 .github/scripts/verify_docs.py .`
+  and `sha256sum -c` on the committed APK, all green; `apksigner
+  verify --print-certs` on the committed APK.
+
 ## [1.9.1] — 2026-11-12
 
 ### Fixed
@@ -5005,7 +5074,8 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.13...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.14...HEAD
+[1.14]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.14
 [1.13]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.13
 [1.12]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.12
 [1.11.2]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.11.2
