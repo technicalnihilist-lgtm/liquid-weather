@@ -2620,6 +2620,76 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — build & release hygiene (2026-11-18, 02:00 IST pass)
+- **Nothing anywhere checked who signed the APK this repository publishes.**
+  `android/build.sh` verifies the key of the APK it has just built and refuses to
+  finish if it is not the project key, but that gate runs on a *build*; the file
+  users download is the one committed at the repository root, and no check ever
+  opened its signature. `verify_apk.py` compared the version and the bundled
+  page, and that is all — so an APK re-signed with a different key, or one
+  stripped of its signature entirely, passed every gate: same `versionCode`, same
+  page, and a `CHECKSUMS.txt` digest taken from the new file. Android refuses
+  such an APK over the released app ("signatures do not match"), which is the one
+  failure a weather app's release process must never ship, and rule 5 of the
+  programme — the signing key never changes — had nothing enforcing it. Measured
+  old against new on the real tree: the 1.15.1 APK re-signed with a freshly
+  generated RSA-2048 key was reported **`OK: the committed APK matches the
+  manifest and the current page`**, exit 0, by the previous checker; the new one
+  fails it and names both digests.
+- `verify_apk.py` now reads the signer certificate straight out of the APK's
+  `META-INF/*.RSA` (a PKCS#7 `SignedData`, first certificate in `[0]`, hashed as
+  DER) and compares it with the digest `CHECKSUMS.txt` prints for a downloader
+  and with the `EXPECTED_CERT_SHA256` that `build.sh` insists on. That digest was
+  the third hand-written copy of one release value that nothing read — the same
+  shape of drift as the README digest, the version label and the size figures
+  before it — and a stale one tells a reader that a correctly signed APK was
+  signed by an impostor. `apksigner` is not needed: CI runs this script before it
+  installs the SDK, so the certificate is parsed in Python (about 40 lines of
+  definite-length DER), and it is byte-for-byte the digest `apksigner
+  verify --print-certs` prints, `2035d69f…`.
+- **A damaged APK ended the checker in a traceback.** A half-written or truncated
+  download made `zipfile` raise `KeyError: There is no item named
+  'AndroidManifest.xml'` (or `BadZipFile`) straight out of `main()`, so the output
+  read as a crash in the tool rather than as the broken APK it was. Those two
+  exceptions, and a malformed signature block, now produce one plain `ERROR` line
+  naming the file and telling the maintainer to rebuild.
+- Verified: `python3 -m py_compile` on the script; `python3
+  .github/scripts/verify_apk.py .` on this tree, which now prints the APK
+  certificate (`2035d69f…`), the advertised one (the same) and `OK: the committed
+  APK matches the manifest, the current page and the project key`; and the
+  old-against-new matrix, run on copies of the tree — APK re-signed with another
+  key: old **exit 0 / OK**, new **exit 1**, both digests named; APK with its
+  `META-INF` signature files removed: old **exit 0 / OK**, new **exit 1**
+  ("carries no JAR signature"); `CHECKSUMS.txt` advertising a wrong certificate:
+  new **exit 1** where the old script said nothing; `build.sh`'s constant drifted
+  from the APK's key: new **exit 1**; APK truncated to 2 KB: new **exit 1** with
+  a one-line error, previously a traceback; the published 1.15 release asset
+  (a different build, the same key) passes the certificate check and is still
+  rejected for its version and page, as before; and `verify_docs.py` and `sha256sum
+  -c` on the committed APK stay green.
+- No visual change, and no app change at all: `web/index.html` is untouched and
+  still byte-identical to `android/assets/index.html` (SHA-256 `b9a7fb7c…`), so
+  there was nothing to rebuild — `versionCode 87` / `versionName 1.15.1` and the
+  committed APK (`85628bd9…`) stand, and `CHECKSUMS.txt` did not move. The page
+  script still passes `node --check` (178 716 chars). The headless Chromium load
+  could not be run in this environment — both bundled headless shells die with
+  `SIGTRAP` before they paint, which is a limit of this pod, not of the page — so
+  the checks above are the whole of this pass's verification; nothing they cover
+  touches the UI.
+- Left alone deliberately: (1) **`versionCode` monotonicity is still unchecked** —
+  proving it only ever increases needs the previous manifest, which means
+  `fetch-depth: 0` in CI and a rule for the first push to a branch, more risk than
+  the defect it guards; the manifest/APK equality check already catches the way
+  this actually went wrong (a bump that was never rebuilt). (2) **`build.sh` still
+  writes the APK to `android/build/` and nothing copies it to the root or rewrites
+  `CHECKSUMS.txt`** — publishing on every build is a behaviour change for the
+  maintainer, not a bug fix. (3) **Between a morning rebuild and the 22:00 release,
+  `CHECKSUMS.txt` and the README describe the committed APK while the published
+  release asset is still the previous one**, so the sentence in `CHECKSUMS.txt`
+  saying the release page shows the same digest is only true after the day's cut —
+  inherent to cutting one release a day, and rewording it is the maintainer's
+  call, not this pass's.
+
 ### Fixed — search & geocoding (2026-11-18, 00:00 IST pass)
 - **The search sheet went on asking a geocoder after it had been closed.** A
   search is started from three places — the 320 ms debounce behind the `input`
