@@ -2620,6 +2620,79 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Clean — render performance (2026-11-17, 08:00 IST pass)
+- **Nothing shippable found in the area; the page is unchanged, no version was
+  bumped and the published APK is untouched.** This is the rotation's second
+  visit to render performance (the first was the 13 November 12:00 and 22:00
+  passes), and what those passes left behind was re-read and then re-measured
+  rather than taken on trust, in headless Chromium at 430×900 / DPR 2 with the
+  forecast, geocoder, Nominatim, BigDataCloud, Commons and image responses
+  mocked.
+- **Forced reflows — clean.** Every layout read in the script is once per event
+  and none is in a frame loop: `size()`'s `getBoundingClientRect()` runs only on
+  `resize`/`orientationchange`/the DPR watcher, `centres()` measures the three
+  tabs only after a `pointerdown`, a resize, a rotation, a strip scroll or a
+  slider move (the ride is applied to the cached centres as arithmetic), the
+  phone box is cached until a resize, and `placePill()` keeps its single
+  `offsetLeft`/`offsetWidth` read per pill move. Measured: a 40-move drag across
+  the phone costs **2 Layouts and 42 style recalculations**, and six °C/°F
+  re-renders (each replacing the whole of `#main`) cost **6 Layouts and 46**.
+- **Canvas DPR handling — clean.** A 430×900 box at DPR 2 holds an 860×1800
+  store; a resize to 390×844 at DPR 1.25 refits to **487×1055**
+  (`trunc(390 × 1.25)` × `trunc(844 × 1.25)`, the fractional-ratio case the
+  guard in `size()` exists for); ten `resize` events with the box unchanged
+  cause **zero** `canvas.width` assignments, so no backing store is thrown away
+  and reallocated. (A device-pixel-ratio change *with* the box unchanged could
+  not be exercised here: headless emulation updates the query's `matches` but
+  delivers no `change` event to the page's own listener either, so nothing in
+  the app can be blamed for the ratio not being re-fitted in that harness. The
+  16 November pass's fix is still in place and is not what this measures.)
+- **rAF budget — clean.** On a rain scene the store is allocated and the loop
+  runs (**12 frames in 1.2 s** in this headless build); on a clear sky `#fx` is
+  **0×0** and **no animation frame is requested at all** over the same window —
+  the loop still ends with the field and the pixels are given back.
+- **The re-render path — measured, nothing to win.** `showPhoto()` re-writes the
+  full-screen photo layer on every render even when the picture, the scrim and
+  the opacity are identical; skipping the write when `src`/`day`/`cover` have
+  not changed was measured old-against-new in the same session and changes
+  nothing: **405 PaintImage events either way**, and no raster difference that
+  survives the run-to-run spread (2 929 ms vs 3 167 ms in one pair, 3 248 ms vs
+  3 537 ms in the next, the shipped build cheaper in both). The 13 November
+  decision to leave it alone stands.
+- **Found, and deliberately not shipped — the card press-squash no longer
+  happens.** `.card:active{transform:scale(.982);transition-duration:.15s}` is
+  outranked by the inline `transform` the depth engine writes onto every card:
+  `applySettings()` → `depthPaint()` → `flush()` → `paint()` writes it at boot,
+  the `MutationObserver` hands it to every freshly painted card, and every
+  pointer, tilt and scroll frame rewrites it. Measured with the page settled
+  (enter animation over) and the card held down: `:active` is true, the
+  transition duration is the rule's 0.15 s, and the computed matrix stays the
+  parallax one at **scale 1.000** — 0.982 is never reached. Restoring it needs
+  either an `!important` transform in the frozen stylesheet or the tilt moved
+  out of the inline style, and both change what a press looks like, so it is
+  written down here instead of shipped.
+- Left alone deliberately, unchanged from 13 November and re-confirmed: (1) the
+  lens still animates `left`/`width` inside a `backdrop-filter` bar; (2) the
+  cards' 3D transform over `backdrop-filter` is still about half of the style
+  cost per frame — it is the design; (3) `placePill()` still forces one
+  recalculation per pill move (measured at 8 → 7 per eight moves when the strip
+  read was hoisted, and declined); (4) `scene()` still writes `--cc` and the
+  cloud/orb opacities on every render even when the scene has not changed —
+  six identical `--cc` writes in one task coalesce into 3 style recalculations
+  costing **8.4 ms** more than the idle baseline in headless, which is noise
+  beside the wholesale `#main` replacement that precedes it, and guarding each
+  write would put a comparison in front of the one line that decides what the
+  sky looks like.
+- `node --check` is clean on the page's extracted script (175 666 bytes), a
+  headless load reports **zero console errors and zero page errors** on the
+  forecast screen, with the search sheet open and a query typed, with the
+  settings panel open and the blur slider moved, and on the offline card (the
+  only console entries there are the browser's own two 503 log lines for the
+  mocked failing endpoint, which is the retry the app is meant to make), and
+  `android/assets/index.html` is still byte-identical to `web/index.html`
+  (SHA-256 `57fddac0…`), so the APK already published is the page this pass
+  audited. `python3 .github/scripts/verify_docs.py .` is green.
+
 ### Fixed — accessibility & semantics (2026-11-17, 02:00 IST pass)
 - **Every row of the city list failed WCAG 2.5.3 (Label in Name).** A row's
   spoken name is stated on the button — `aria-label="Mumbai, India"` — while the
