@@ -2620,6 +2620,68 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — search & geocoding (2026-11-18, 00:00 IST pass)
+- **The search sheet went on asking a geocoder after it had been closed.** A
+  search is started from three places — the 320 ms debounce behind the `input`
+  event, the same debounce behind `compositionend`, and the Enter key — and
+  none of them checked whether the sheet was still open. `closeSheet()` clears
+  the pending debounce and aborts the request in flight, which covers a search
+  that has already been scheduled; it cannot cover one scheduled *after* it
+  runs, and that is exactly what an input method produces. `closeSheet()` blurs
+  the search field, the blur ends the composition, and `compositionend` sets the
+  same debounce every keystroke sets — so a reader composing an Indic, Japanese,
+  Chinese or Korean word who dismissed the sheet while the candidate was still
+  open (an IME that commits a beat after the tap, the normal case on Android, or
+  Firefox's Escape, which does not clear the field first) started a search for
+  text nobody could see. Measured in headless Chromium at 412×915: the old page
+  issued **two** geocoder requests for it — Open-Meteo, then Nominatim behind it
+  — up to 12 s of radio, and repainted the closed sheet with `No place found for
+  “मुंब”`; the same happened for any stray `input` the field was handed while it
+  was closed.
+- `search()` now returns immediately unless the sheet is open. The debounce and
+  the Enter key are the only ways in, so the guard sits at the one line they all
+  reach, and it also stops the repaint of a sheet that is `inert` and off screen.
+  Nothing changes for an open sheet: every keystroke, composition commit and
+  Enter it carries arrives with the sheet open and runs exactly as before —
+  measured old against new, "mumbai" is the same single Open-Meteo request and
+  `1 result for “mumbai”`, "japan" the same three rows (Sapporo, Tokyo, Osaka)
+  and the same status line, and a reopened sheet the same empty box, saved rows
+  and Popular list.
+- No visual change: no markup, CSS, wording, colour, spacing, gradient, glass
+  value or animation timing was touched, and the guard adds one `if` that only
+  ever runs in a state that paints nothing.
+- Verified: `node --check` on the extracted script (178 716 chars); headless
+  Chromium loads of `web/index.html` with the forecast, geocoder, Nominatim,
+  BigDataCloud, Commons and image responses mocked report **zero console
+  messages and zero page errors**; the fix proved old-against-new by counting
+  requests — the composition-then-close sequence: old `open-meteo`, `nominatim`
+  and a repainted closed sheet, new **no requests** and the closed sheet
+  untouched; the control (typing "mumbai" and "japan" with the sheet open)
+  identical in both builds, row for row and status line for status line.
+- `versionCode 87` / `versionName 1.15.1` in `android/AndroidManifest.xml` (up
+  from 86 / 1.15), same signing key, so it installs over 1.15.
+  `android/assets/index.html` is byte-identical to `web/index.html` (SHA-256
+  `b9a7fb7c…`); the APK was rebuilt from this tree with `android/build.sh`
+  (JDK 17, build-tools 34.0.0, platform 34), bundles that page, carries
+  `versionCode 87` / `versionName 1.15.1`, and `.github/scripts/verify_apk.py`
+  agrees on all three. `CHECKSUMS.txt` and the README's digest block carry the
+  new digest `85628bd9…` (111 464 bytes, 109 KB — unchanged, so STORE.md's size
+  figures still match), and `apksigner verify --print-certs` reports the project
+  key (`2035d69f…`, `CN=Liquid Weather`).
+- Left alone deliberately: (1) **the bundled list still has no city aliases** —
+  "bangalore", "bombay" and "new delhi" find nothing offline although Bengaluru,
+  Mumbai and Delhi are in it, which is a missing answer rather than a wrong one
+  and needs a table the list has never had (recorded by the 16 November pass and
+  still a behaviour decision); (2) **the country prefix rule** — "ch" still
+  returns Chinese cities and "in" Indian ones, the type-ahead the sheet is meant
+  to do; (3) **a punctuation- or emoji-only query** ("...", "🌧") is still sent
+  to both geocoders before the bundled list answers — a wasted pair of requests,
+  but gating it would also suppress the "Searching…" state those queries show
+  today, which is a visible change; (4) **a repaint that lands while focus sits
+  on a result row** still drops focus to `<body>`, because `sheetFocusKey()`
+  names only `data-go`/`data-rm2`/`data-rm` controls — an accessibility defect,
+  and it belongs to that pass.
+
 ### Fixed — accessibility & semantics (2026-11-17, 22:00 IST pass)
 - **The 7-day forecast read its two temperatures out as bare numbers.** A row
   paints `20°` and `30°` side by side and says nothing about which is which:

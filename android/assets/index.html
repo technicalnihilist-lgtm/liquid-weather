@@ -2801,6 +2801,22 @@ function countryMatches(term) {
 }
 
 async function search(q) {
+  /* A search belongs to a sheet that is open. closeSheet() and openSheet() both
+     stop the pending debounce and the request already in flight, but neither
+     can stop a keystroke that has not happened yet — and one arrives after the
+     sheet is shut whenever an input method is still composing when it closes:
+     closeSheet() blurs the field, the blur ends the composition, and
+     compositionend sets the same 320 ms debounce every keystroke sets. A reader
+     composing "मुंबई" who dismissed the sheet with Escape therefore fired
+     search() at a closed sheet — measured in headless Chromium, two geocoder
+     requests (Open-Meteo, then Nominatim) for text nobody could see, up to 12 s
+     of radio for it, and a repaint of a sheet that is inert and off screen. The
+     same is true of any stray `input` the field is handed while it is closed.
+     The debounce and the Enter key are the only ways in, so the guard sits
+     here, where all three arrive.
+     An open sheet is untouched: every keystroke, composition commit and Enter it
+     carries reaches this line with the sheet open and runs exactly as before. */
+  if (!sheet.classList.contains('open')) return;
   const seq = ++qSeq;
   /* Every keystroke past the debounce started its own geocoder request and left
      the previous one running: typing "mumbai" with a pause in it put two
