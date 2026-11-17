@@ -59,6 +59,12 @@ main::-webkit-scrollbar{display:none}
 
 
 :focus-visible{outline:2px solid #fff;outline-offset:2px}
+/* Words for the screen reader only. The 7-day rows paint their two temperatures
+   as bare numbers, low then high, and which is which is carried by position and
+   by the dimmer colour of .lo — neither of which a screen reader can hear, so
+   the row was announced as "Today 20° 30°". .vh says the words without taking
+   space or painting anything: it is clipped out of the layout. */
+.vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
 /* ---- search sheet ---- */
 /* sheet: see motion layer below */
 
@@ -2061,8 +2067,8 @@ function render(p, w) {
     const lo = lows[i], hi = highs[i];
     const a = (lo - mn) / span * 100, b = (hi - mn) / span * 100;
     return `<div class="day"><em>${dayName(iso, today)}</em><i>${iconFor(d.weather_code[i], true)}</i>` +
-      `<small class="lo">${T(lo)}°</small><div class="rng"><span style="left:${a.toFixed(1)}%;right:${(100 - b).toFixed(1)}%"></span></div>` +
-      `<small>${T(hi)}°</small></div>`;
+      `<small class="lo"><span class="vh">Low </span>${T(lo)}°</small><div class="rng"><span style="left:${a.toFixed(1)}%;right:${(100 - b).toFixed(1)}%"></span></div>` +
+      `<small><span class="vh">High </span>${T(hi)}°</small></div>`;
   }).join('');
 
   const uv = uvAt(d, ti);

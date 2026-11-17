@@ -81,7 +81,7 @@ If you like our work, you can support us with a donation. We are bringing this v
 
 ## 📲 Install the APK
 
-**Latest APK:** [v1.14](https://github.com/technicalnihilist-lgtm/liquid-weather/releases/latest)
+**Latest APK:** [v1.15](https://github.com/technicalnihilist-lgtm/liquid-weather/releases/latest)
 
 1. Download **[`LiquidWeather.apk`](LiquidWeather.apk)** (109 KB) from this repo — or from [Releases](../../releases/latest).
 2. Tap the file on your phone. Android will say the developer is unknown (the app is self-signed, not from the Play Store) — choose **Install anyway**.
@@ -93,7 +93,7 @@ Verify your download if you like — the SHA-256 is in [`CHECKSUMS.txt`](CHECKSU
 
 ```bash
 sha256sum LiquidWeather.apk
-# 8e617564f02d4f41df57fcffaa0d3f8850ee0c376e3ac5eaaa402be5ab19aa3b
+# a0797f88f2db548ca891e741b8e7c1146b7258db4979dd693d8df2dc3c7884ff
 ```
 
 ---

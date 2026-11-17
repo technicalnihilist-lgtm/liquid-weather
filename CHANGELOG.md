@@ -2620,6 +2620,56 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — accessibility & semantics (2026-11-17, 22:00 IST pass)
+- **The 7-day forecast read its two temperatures out as bare numbers.** A row
+  paints `20°` and `30°` side by side and says nothing about which is which:
+  the low is told apart only by coming first and by the dimmer `--tx2` of
+  `.lo`, and neither of those reaches a screen reader, so the row was announced
+  as "Today 20° 30°" — two numbers, no meaning. This is the 02:00 pass's
+  second leftover, recorded there as needing a clipped text node that nobody had
+  proved paint-free.
+- The words are there now, in a span clipped out of the layout (`.vh`, the same
+  pattern as the sheet's status region): "Low 20°" and "High 30°". Read off the
+  new build's accessibility tree, the card says "Today ⛅ Low 20° High 30° Wed
+  ☁️ Low 19° High 31° …" — and nothing is said twice, because the two numbers
+  keep their own text and only gain a word in front of it.
+- **Nothing moves.** 126 nodes of `#main` were compared with the previous build
+  by tree path — x, y, width, height, font size, display, colour, text-align,
+  position, weight, opacity, visibility, line height and letter spacing: the
+  only 14 keys that differ are the 14 new spans, and not one other box or style
+  moved. A screenshot of the 7-day card is byte-identical with the spans
+  rendered and with `.vh{display:none}` applied on top of them (SHA-256
+  `b8f7b399…`, compared after discarding the first frame that follows any
+  repaint — in this harness that frame always differs from every later one, on
+  the old build too).
+- Verified: `node --check` on the extracted script (177 529 chars); headless
+  Chromium loads with the forecast, geocoder, Nominatim, BigDataCloud, Commons
+  and image responses mocked report **zero console messages and zero page
+  errors**; axe-core over the forecast screen, the search sheet and the settings
+  panel reports **zero violations**; and the accessibility-tree and pixel
+  measurements above.
+- `versionCode 86` / `versionName 1.15` in `android/AndroidManifest.xml` (up
+  from 85 / 1.14.2), same signing key, so it installs over 1.14.2.
+  `android/assets/index.html` is byte-identical to `web/index.html` (SHA-256
+  `8d56a8c6…`); the APK was rebuilt from this tree with `android/build.sh`
+  (JDK 17, build-tools 34.0.0, platform 34), bundles that page, carries
+  `versionCode 86` / `versionName 1.15`, and `apksigner verify --print-certs`
+  reports the project key (`2035d69f…`, `CN=Liquid Weather`). `CHECKSUMS.txt`
+  and the README's digest block carry the new digest `a0797f88…` (111 464
+  bytes, 109 KB — unchanged, so STORE.md's size figures still match).
+- Left alone deliberately: (1) **text contrast over the scenes** is unchanged —
+  the top bar's city name still falls to 2.97:1 on the fog scene, and every
+  route to raising it is a visible change; (2) **the `:focus-visible` ring is
+  `#fff` with no dark edge**, so on the brightest part of a clear-sky scene the
+  ring itself is low-contrast — a ring colour is a visible change; (3) **the
+  cards' `.lbl` labels are not headings**, so a screen reader still cannot jump
+  between *Hourly forecast*, *7-day forecast* and the metric cards — that is a
+  navigation improvement, and this pass ships fixes only; (4) **the `✕`, `↻`
+  and the hero's `H:`/`L:` abbreviations** keep the names and letters they have —
+  the first two are axe "incomplete", not violations, and giving them a spoken
+  name that contains the glyph would make the app read out a symbol, while the
+  hero's letters already distinguish the two numbers the 7-day rows did not.
+
 ### Fixed — network & API robustness (2026-11-17, 14:00 IST pass)
 - **A query that neither geocoder answered held the sheet on "Searching…" for
   18 seconds.** The two services each carried their own 9 s deadline and
@@ -4741,6 +4791,63 @@ one more, found on the day's last pass.
 Ideas that would be welcome: a language switch, sleet/haze scenes,
 a home-screen widget, and a "feels like" curve on the hourly strip.
 
+## [1.15] — 2026-11-17
+
+The day's release, cut from the 22:00 IST pass. It publishes everything the
+programme fixed on 17 November — the 02:00, 14:00 and 22:00 passes — as one
+version. The 00:00 (storage) and 08:00 (render performance) passes found nothing
+shippable and changed nothing, and the APK is rebuilt so the published app is
+the app in the repository.
+
+### Fixed (carried in this release)
+- **The 7-day forecast announced its two temperatures as bare numbers**, with no
+  word saying which was the low (22:00 pass, accessibility & semantics): the row
+  read as "Today 20° 30°", because which number is which was carried only by
+  order and by the dimmer colour of the low. Each row now says "Low 20° High
+  30°" through a span clipped out of the layout. See the entry above.
+- **Every row of the city list failed WCAG 2.5.3 (Label in Name)** (02:00 pass,
+  accessibility & semantics): the row's spoken name was "Mumbai, India" while the
+  two text nodes it paints — `<b>Mumbai</b><small>India</small>`, both
+  `display:block` — concatenated to the single word "MumbaiIndia", so voice
+  control could not match the row. A space between them fixes it; nothing moves,
+  because the whitespace collapses into the anonymous block between two block
+  boxes.
+- **A query that neither geocoder answered held the sheet on "Searching…" for
+  18 seconds** (14:00 pass, network & API robustness): the two services each
+  carried their own 9 s deadline with nothing tying the pair together, so the
+  worst case was their sum. One 12 s budget now covers the pair, and every real
+  answer — which arrives in well under a second — is untouched.
+- **A stored city photo whose file stopped loading kept its place for three
+  weeks** (14:00 pass, network & API robustness): the image layer's error handler
+  emptied the layer but left the dead URL in `lw_photos`, so the backdrop stayed
+  blank for the rest of `PHOTO_TTL` and every launch re-read the same URL. The
+  record is now dropped the moment its own image fails.
+
+### Notes
+- `versionCode 86` / `versionName 1.15` in `android/AndroidManifest.xml` (up
+  from 85 / 1.14.2), same signing key, so it installs over every 1.14 build.
+- `web/index.html` is the page this day's fixes produced and is byte-identical
+  to `android/assets/index.html` (SHA-256 `8d56a8c6…`).
+- The APK was rebuilt from this tree with `android/build.sh` (JDK 17,
+  build-tools 34.0.0, platform 34). It bundles `assets/index.html`
+  byte-identical to `web/index.html`, carries `versionCode 86` /
+  `versionName 1.15`, and `.github/scripts/verify_apk.py` agrees on all three.
+  `CHECKSUMS.txt` carries the new digest,
+  `a0797f88f2db548ca891e741b8e7c1146b7258db4979dd693d8df2dc3c7884ff`, and so
+  does the `sha256sum` block in `README.md` (checked by `verify_docs.py`), which
+  now also names v1.15, as does `STORE.md`; `apksigner verify --print-certs`
+  reports the project key (`2035d69f…`, `CN=Liquid Weather`).
+- The APK is still 111 464 bytes (109 KB), so no size figure in `README.md` or
+  `STORE.md` moved.
+- Verified: `node --check` on the page's script; headless Chromium loads of
+  `web/index.html` with mocked forecast, geocoder, Nominatim, BigDataCloud,
+  Commons and image responses reporting **zero console errors and zero page
+  errors**; axe-core reporting zero violations on the forecast screen, the sheet
+  and the settings panel; the per-pass checks recorded in each entry above;
+  `python3 .github/scripts/verify_apk.py .`, `python3
+  .github/scripts/verify_docs.py .` and `sha256sum -c` on the committed APK, all
+  green; `apksigner verify --print-certs` on the committed APK.
+
 ## [1.14] — 2026-11-16
 
 The day's release, cut from the 22:00 IST pass. It publishes everything the
@@ -5330,7 +5437,8 @@ First public release.
 - APK is self-signed; Android shows the "unknown developer" prompt on install.
 - Verified signature schemes: v1, v2 and v3. `minSdk 23`, `targetSdk 34`.
 
-[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.14...HEAD
+[Unreleased]: https://github.com/technicalnihilist-lgtm/liquid-weather/compare/v1.15...HEAD
+[1.15]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.15
 [1.14]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.14
 [1.13]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.13
 [1.12]: https://github.com/technicalnihilist-lgtm/liquid-weather/releases/tag/v1.12
