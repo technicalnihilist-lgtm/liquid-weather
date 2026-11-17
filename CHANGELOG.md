@@ -2620,6 +2620,60 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — network & API robustness (2026-11-17, 14:00 IST pass)
+- **A query that neither geocoder answered held the sheet on "Searching…" for
+  18 seconds.** The two services each carried their own 9 s deadline and
+  nothing tied the pair together, so the worst case was the sum: a link that is
+  up but cannot reach either host, or two services having a bad minute, meant
+  18 s of a spinner, two deadlines, two sockets and the radio awake before the
+  sheet fell back to the bundled list. Measured in headless Chromium with both
+  geocoders held silent, the sheet settled **17.83 s** after the keystroke. One
+  budget now covers the pair: the fallback is given what is left of it, never
+  more than the 9 s it has always had and never less than 3 s, so the worst case
+  is 12 s and every real answer — a geocoder that answers in well under a second
+  — is untouched.
+- **A stored city photo whose file stopped loading kept its place for three
+  weeks.** `lw_photos` remembers a Commons file per city for `PHOTO_TTL` (21
+  days) and a *fresh* record is shown without asking Commons again, but the
+  image layer's error handler only emptied the layer: the dead URL stayed in the
+  record, so the backdrop stayed blank for the rest of the TTL and every launch
+  re-read the same URL. Measured with a Commons answer whose `thumburl` returns
+  404: the record was written, the layer went blank, and a relaunch asked
+  Commons **zero** times. The record is now dropped the moment its own image
+  fails to load, and the failure is remembered for the same five minutes a failed
+  lookup is, so a Commons having a bad minute is not asked again on every
+  repaint. Only the record on screen is touched — the bundled sky photos own no
+  record, so a 404 on one of those changes nothing.
+- **Nothing visible changed.** Old against new, in headless Chromium at
+  412×915 / DPR 2 with the forecast, geocoder, Nominatim, BigDataCloud, Commons
+  and image responses mocked: the settled `#main` markup, the photo layer's
+  `background-image` and class, the credit line and the whole search sheet
+  (markup hash and status line) are **byte-identical**, both with and without a
+  city photo. No layout, spacing, colour, typography, gradient, glass value,
+  wording or timing moved.
+- Verified: `node --check` on the extracted script (177,472 chars); headless
+  Chromium loads with every API mocked report **zero console messages and zero
+  page errors**; the two measurements above (17.83 s → 11.84 s; record kept →
+  record dropped and re-asked on the next launch); `sha256sum -c` on the
+  committed APK, `verify_apk.py` and `verify_docs.py` all green.
+- `versionCode 85` / `versionName 1.14.2` in `android/AndroidManifest.xml` (up
+  from 84 / 1.14.1), same signing key, so it installs over 1.14.1.
+  `android/assets/index.html` is byte-identical to `web/index.html` (SHA-256
+  `d4dfb0a5…`); the APK was rebuilt from this tree with `android/build.sh`
+  (JDK 17, build-tools 34.0.0, platform 34), bundles that page, carries
+  `versionCode 85` / `versionName 1.14.2`, and `apksigner verify --print-certs`
+  reports the project key (`2035d69f…`, `CN=Liquid Weather`). `CHECKSUMS.txt`
+  and the README's digest block carry the new digest `8e617564…` (111,464
+  bytes, 109 KB — unchanged, so STORE.md's size figures still match).
+- Left alone deliberately: (1) `getJSON()` ignores an `Retry-After` sent as an
+  HTTP-date (`parseInt` gives NaN, so the retry waits the 300 ms floor) — the
+  retry is capped at 2 s by design, so the difference is between 300 ms and
+  2 s, not a spec violation worth changing the retry policy for; (2) a response
+  body on a retried 4xx/5xx is not explicitly cancelled — the pages are tiny and
+  Chromium drops them, and adding a `body.cancel()` would change nothing
+  measurable; (3) the first geocoder's own 9 s deadline is unchanged, so a slow
+  but working Open-Meteo still gets its full window.
+
 ### Clean — render performance (2026-11-17, 08:00 IST pass)
 - **Nothing shippable found in the area; the page is unchanged, no version was
   bumped and the published APK is untouched.** This is the rotation's second

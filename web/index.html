@@ -428,8 +428,34 @@ function showPhoto(src, day, cov) {
     el.style.opacity = String(Math.min(.74, (day ? .40 : .30) + (day ? .26 : .18) * cov));
     el.classList.add('on');
   };
-  img.onerror = () => { if (token === photoToken) { el.classList.remove('on'); el.style.backgroundImage = 'none'; } };
+  img.onerror = () => {
+    if (token !== photoToken) return;
+    el.classList.remove('on'); el.style.backgroundImage = 'none';
+    forgetPhoto(src);
+  };
   img.src = src;
+}
+/* A stored record whose file no longer loads — a Commons file renamed or
+   deleted, a thumbnail purged, a URL that answered when it was looked up — kept
+   its place in `lw_photos` for the whole three-week PHOTO_TTL. The layer was
+   emptied by the error handler beside this, and because a *fresh* record is
+   shown without asking Commons again (see applyPhoto), nothing ever looked the
+   city up a second time: the backdrop stayed blank for up to twenty-one days
+   and every launch after that read the same dead URL. The record is dropped the
+   moment its own image fails to load, and the failure is remembered for the
+   same five minutes a failed lookup is, so a Commons having a bad minute is not
+   asked again on every repaint. Only the record on screen is touched: the
+   bundled sky photos own no record, so a 404 on one of those changes nothing.
+   Nothing visible changes — the layer is already blank when this runs, and the
+   next render draws the same sky it drew before. */
+function forgetPhoto(src) {
+  if (!cityPhoto || cityPhoto.u !== src) return;
+  const key = photoKeyFor(places[cur]);
+  cityPhoto = null;
+  if (!key || !photoStore[key] || photoStore[key].u !== src) return;
+  delete photoStore[key];
+  savePhotos([key]);
+  photoFail[key] = mono();
 }
 /* Every other request in the app runs against a deadline; this one had none.
    Its AbortController is the one fetchCityPhoto() creates, and only a newer city
@@ -2679,9 +2705,24 @@ const usableResult = o => !!o && typeof o.name === 'string' && o.name.trim() !==
   && typeof o.lat === 'number' && typeof o.lon === 'number'
   && isFinite(o.lat) && isFinite(o.lon) && Math.abs(o.lat) <= 90 && Math.abs(o.lon) <= 180;
 
+/* A query the primary geocoder does not answer is asked of the fallback, and
+   each service carried its own 9s deadline with nothing tying the pair
+   together: when neither answered — a link that is up but cannot reach either
+   host, or two services having a bad minute — the sheet sat on "Searching…"
+   for 18 seconds before falling back to the bundled list, with two deadlines,
+   two sockets and the radio held for the whole of it (measured in headless
+   Chromium with both geocoders silent: 17.83s). One budget now covers the
+   pair: the fallback is given what is left of it, never more than the 9s it
+   has always had and never less than 3s, so a query that both services ignore
+   settles in at most 12s while a fallback that answers promptly — every real
+   answer — is untouched. */
+const SEARCH_BUDGET = 12000;                 // both geocoders together
+const SEARCH_DEADLINE = 9000;                // one service's own deadline, unchanged
+const SEARCH_MIN = 3000;                     // the least the fallback is ever given
 async function remoteSearch(term, signal) {
+  const t0 = mono();
   try {
-    const j = await getJSON('https://geocoding-api.open-meteo.com/v1/search?count=8&language=en&format=json&name=' + encodeURIComponent(term), 9000, signal);
+    const j = await getJSON('https://geocoding-api.open-meteo.com/v1/search?count=8&language=en&format=json&name=' + encodeURIComponent(term), SEARCH_DEADLINE, signal);
     const subOf = r => {
       const bits = [];
       if (r.admin1 && r.admin1 !== r.country) bits.push(r.admin1);
@@ -2711,8 +2752,10 @@ async function remoteSearch(term, signal) {
      fallback, which fired a fresh Nominatim request — for a search nobody was
      waiting for any more. */
   if (signal && signal.aborted) return [];
+  /* what is left of the pair's budget, so the two deadlines cannot add up */
+  const left = Math.min(SEARCH_DEADLINE, Math.max(SEARCH_MIN, SEARCH_BUDGET - (mono() - t0)));
   try {
-    const j = await getJSON('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&q=' + encodeURIComponent(term), 9000, signal);
+    const j = await getJSON('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&q=' + encodeURIComponent(term), left, signal);
     return (Array.isArray(j) ? j : []).filter(r => r && typeof r === 'object').map(r => {
       const parts = String(r.display_name || '').split(', ');
       return { name: parts[0], sub: parts.slice(1, 3).join(', '), lat: toNum(r.lat), lon: toNum(r.lon) };
