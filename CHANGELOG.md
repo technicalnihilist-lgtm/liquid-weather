@@ -2620,6 +2620,59 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Clean — memory & lifecycle (2026-11-18, 08:00 IST pass)
+- **Nothing shippable found in the area; the page is unchanged, no version was
+  bumped and the published APK is untouched.** This is the rotation's fourth
+  visit to memory & lifecycle (14 November 02:00 and 22:00, 16 November 00:00,
+  10:00 and 20:00), so what those passes shipped was re-run as a regression
+  check rather than taken on trust, and the leftovers they recorded were
+  re-measured — in headless Chromium at 412×915 / DPR 2 with the forecast,
+  geocoder, Nominatim, BigDataCloud, Commons and image responses mocked.
+- **Leaks — flat.** 100 °C/°F toggles, each replacing the whole of `#main`,
+  leave the DOM at **244 nodes** and the listener counts at **11 window, 4
+  document, 2 `#main`, 4 `#q`, 2 `.phone`**; 50 sheet open/search/close plus
+  settings open/close cycles, 30 Reduce-motion flips, 20 visibility flips and
+  20 city switches move none of them, and the JS heap after a forced GC sits at
+  **0.93–0.94 MB** from the tenth cycle to the fiftieth. About 240 mixed random
+  actions (tabs, sliders, scenes, add and remove city, searches, refresh,
+  locate, Escape, resize, visibility) reported **zero console messages and zero
+  page errors**.
+- **The canvas state machine is correct in every transition, re-proved.** Rain:
+  an 824×1800 store, 170 particles, **19 272 lit pixels**; clear day: store
+  released to 0×0 and no frame scheduled; hidden mid-storm: 0×0, no frames and
+  the lightning chain cleared; on return: 824×1800 with the same field and
+  **18 133 lit pixels**; a clear night after rain: 90 stars, **1 801 lit
+  pixels** (the 14 November regression); Reduce motion on: 0×0 with nothing
+  scheduled; off again: refitted and lit (**19 731**). A resize that arrives
+  while the page is hidden leaves the store released and records the new box
+  (W/H 360×800); the return refits to **720×1600** and draws (**20 063**).
+  Thirty resizes of a box that really moves cause **13** `canvas.width`
+  writes — only the ones where the measurement changed — and a device pixel
+  ratio of 3 still caps at the documented 2.
+- **The Android shell was re-read, not changed**: `onPause`/`onResume` hand the
+  renderer to the platform, and `onDestroy` answers every pending geolocation
+  callback, detaches the WebView, stops the load in flight and only then
+  destroys it — no path leaves a callback, a listener or an interval behind.
+- Left alone deliberately, the standing items plus two this pass measured:
+  (1) the 60-second `autoRefresh` interval still ticks while the page is hidden
+  — it returns on its first line, and clearing it would mean re-arming it on
+  return for a timer wake a minute; (2) the `deviceorientation` subscription is
+  still kept while Reduce motion halts the parallax — its handler's only output
+  is a `queue()` that no-ops with the engine off, and removing and re-adding the
+  listener risks the one-directional failure the 14 November pass fixed, for a
+  cost too small to measure; (3) `showPhoto()` still builds one `Image` per
+  render of an already-decoded picture — a cache hit, and reusing the object
+  would let a superseded token paint a stale photo; (4) the `setTimeout(size,
+  250)` on `orientationchange` is still untracked — each firing measures and
+  returns; (5) the nine cloud layers and the sun keep their compositor
+  animations while the app is away, which is what `WebView.onPause()` is for;
+  (6) a scene that seeds no particles is still handed one frame on return to
+  the foreground, because `startFx()` schedules the loop before `tick()`
+  discovers there is nothing to draw — one frame, which then stops itself, and
+  guarding it would add a branch to the one function whose ordering the 14
+  November fixes depend on; (7) the search sheet's own repaint path is area 8's
+  business and was not touched from here.
+
 ### Fixed — build & release hygiene (2026-11-18, 02:00 IST pass)
 - **Nothing anywhere checked who signed the APK this repository publishes.**
   `android/build.sh` verifies the key of the APK it has just built and refuses to
