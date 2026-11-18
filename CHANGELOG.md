@@ -2620,6 +2620,62 @@ one more, found on the day's last pass.
 
 ## [Unreleased]
 
+### Fixed — search & geocoding (2026-11-18, 20:00 IST pass)
+- **A search result lost keyboard focus the moment the sheet repainted itself.**
+  `paintSheet()` rebuilds the list with `innerHTML`, so every repaint destroys
+  the control that had focus — and `sheetFocusKey()` names that control by its
+  own attributes so it can be found again. It knew `#shLoc`, `#shRefresh` and
+  the saved rows' `data-go`/`data-rm2`/`data-rm`, but not the one control a
+  search is mostly used from: a result row that is not saved yet. That row's
+  button carried no identifying attribute at all — the place's coordinates sit
+  on the wrapper `div`, and the button inside it had only a class and a label —
+  so `sheetFocusKey()` answered `''`, `paintSheet()` restored nothing, and focus
+  fell to `<body>` exactly as before the rule existed. This is the commonest
+  repaint there is: type a query, Tab into the sheet while "Searching…" is on
+  screen, and the geocoder's answer replaces the rows under the keyboard. The
+  Popular rows are built by the same `row()` and were lost the same way.
+  Measured in headless Chromium at 412×915, focus on the first result row and
+  `repaintSheet()` run: `document.activeElement` was **`BODY`** before this
+  change and is **the same button** after it (`data-key="19.076,72.8777"`);
+  the same for a Popular row (`23.0225,72.5714`). A row that is genuinely gone
+  from the new list still falls back to the sheet's first control (`#shLoc`),
+  which is the rule the function already stated.
+- `row()`'s button now carries `data-key`, the place's `lat,lon` — the one
+  thing every row has, that `dedupe()` has already made unique, and that a
+  repaint cannot change — and `sheetFocusKey()` reads it. Nothing else reads
+  the attribute and no stylesheet selects it.
+- **No visual change.** The markup differs by one attribute: every element in
+  `#sheet`, `#main` and `#nav` has identical geometry and identical computed
+  font, colour, background and opacity against the previous file, and the
+  pixel comparison of the loaded, sheet-open and results screens is inside the
+  run-to-run noise floor of the animated sky and nav pill (old-vs-new
+  differences measured *smaller* than old-vs-old). `node --check` clean on the
+  extracted script; headless Chromium with the forecast, geocoders and
+  BigDataCloud mocked reports **zero console messages and zero page errors**
+  across the loaded page, the sheet open, three searches, adding a city,
+  removing it, the settings panel, the unit toggle, the offline card and
+  Escape; four 60-action interaction fuzz runs (random queries, payload shapes,
+  open/close, row taps, removals) found no stuck "Searching…", no blank list
+  and no error.
+- `versionCode 88` / `versionName 1.15.2`, same signing key (certificate
+  `2035d69f…`), rebuilt with `android/build.sh`; `verify_apk.py` confirms the
+  APK's bundled page is this page, the version matches the manifest and the
+  signer is the project key, and `verify_docs.py` confirms `CHECKSUMS.txt` and
+  the README carry the new digest (`e50a7f0d…`). The APK is the same 109 KB.
+- Left alone deliberately: (1) the bundled list still answers nothing offline
+  for a handful of everyday spellings the list itself does not carry — "new
+  delhi" (the app's own default city, filed as *Delhi*), "bangalore",
+  "bombay", "calcutta", "cochin", "trivandrum", "gurgaon", "noida", "washington
+  dc" and "turkey" (the country is filed as *Türkiye*). These are entries in
+  `POPULAR`/`COUNTRY_ALIAS`, not code: adding them changes what the list
+  contains, which is content rather than a fix, so it is recorded for the
+  maintainer instead of shipped from a maintenance pass; (2) a saved row's ✕ is
+  still named by its index in `places` (`data-rm2`), so a repaint that reorders
+  the saved list can move focus to the ✕ of a neighbouring city — the indices
+  are the only identity those rows have in the markup, and keying them by place
+  id would mean reworking `removeSaved()`'s contract for a case that only
+  arises when another tab rewrites the saved list while the sheet is open.
+
 ### Clean — memory & lifecycle (2026-11-18, 08:00 IST pass)
 - **Nothing shippable found in the area; the page is unchanged, no version was
   bumped and the published APK is untouched.** This is the rotation's fourth

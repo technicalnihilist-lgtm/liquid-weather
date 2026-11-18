@@ -2602,8 +2602,13 @@ function row(o) {
      the °C/°F button's is; the visible text is untouched and the ✕ keeps its
      own label. */
   const name = o.name + (o.sub ? ', ' + o.sub : '');
+  /* The row's own control carries the place it stands for (its coordinates, the
+     one thing every row has and no other row shares — dedupe() has already
+     dropped the rows that did), so paintSheet() can find the same button again
+     after the list has been rebuilt. It is the same pair the row already hands
+     addPlace() in data-lat/data-lon, and nothing reads it but sheetFocusKey(). */
   return `<div class="sh-i" data-lat="${o.lat}" data-lon="${o.lon}" data-name="${esc(o.name)}" data-sub="${esc(o.sub || '')}">
-    <button class="tap" aria-label="${esc(name)}">
+    <button class="tap" data-key="${o.lat},${o.lon}" aria-label="${esc(name)}">
     <span class="ic" aria-hidden="true">${isSaved ? '📍' : '🔎'}</span>
     <span style="min-width:0"><b>${esc(o.name)}</b> <small>${esc(o.sub || '')}</small></span></button>${right}</div>`;
 }
@@ -2619,12 +2624,25 @@ let lastResultsQ = null;   // and the query they answer: a cache with no key ans
    named by its own attributes (never by its position, which the repaint is
    free to change) and found again in the new markup; if the thing they were on
    is gone, the first control of the sheet takes the focus rather than the
-   document. */
+   document.
+   Every control in the list was covered except the one a search is mostly
+   used from: a result row that is not saved yet. Its button carried no
+   identifying attribute at all — the row's data-lat/data-lon sit on the
+   wrapper, and the button inside it had only a class and a label — so
+   sheetFocusKey() answered '' for it, paintSheet() restored nothing, and the
+   repaint dropped the reader to <body> exactly as before this rule existed.
+   That is the commonest repaint there is: type a query, Tab into the sheet
+   while "Searching…" is on screen, and the answer replaces the rows under the
+   keyboard (measured in headless Chromium, focus on a result row and
+   repaintSheet() run: document.activeElement was BODY before, the same button
+   after). The Popular rows are the same shape and were lost the same way. Both
+   now carry data-key, the coordinates of the place they stand for, which the
+   repaint cannot change. */
 function sheetFocusKey() {
   const a = document.activeElement;
   if (!a || a === document.body || !listEl.contains(a)) return '';
   if (a.id) return '#' + a.id;
-  for (const at of ['data-go', 'data-rm2', 'data-rm'])
+  for (const at of ['data-go', 'data-rm2', 'data-rm', 'data-key'])
     if (a.hasAttribute(at)) return '[' + at + '="' + a.getAttribute(at) + '"]';
   return '';
 }
